@@ -48,6 +48,8 @@
  
  1. Open the terminal to the `roblox-screenshot` folder
  2. Run `node .`
+
+ While calibrating or taking screenshots, you must leave the Roblox Studio window open and leave it unobstructed. `roblox-screenshot` takes a screenshot of your screen and crops it down to the Roblox Studio viewport, so `roblox-screenshot` will only work properly if Roblox Studio is on top.
  
  ---
  
