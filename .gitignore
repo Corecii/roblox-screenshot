@@ -57,6 +57,11 @@ typings/
 # dotenv environment variables file
 .env
 
+# Windows files
+Thumbs.db
+
 # project-specific files and directores
 screenshots/
 previews/
+roblox-screenshot/
+roblox-screenshot.zip

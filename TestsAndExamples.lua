@@ -46,7 +46,7 @@ scr:CenterCamera{
 
 scr:Screenshot{
 	destination = "test-01",
-	--cropCenter = Vector2.new(300, 500),
+	--crop = Vector2.new(300, 500),
 	--mask = true,
 }:Print("Screenshot test-01 "):Assert()
 
