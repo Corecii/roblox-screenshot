@@ -284,6 +284,7 @@ app.post('/upload',
             response.send({success: false, errorCode: 11, error: "Previews have been disabled. Check settings.json."});
             return;
         }
+        let toDelete = request.body.delete;
         let cookie = request.body.cookie;
         let fileName = destination+".png";
         let name = request.body.name || destination;
@@ -309,17 +310,24 @@ app.post('/upload',
             }
             console.log("Uploaded! At: " + data.BackingAssetId);
             response.send({success: true, destination: destination, imageId: data.BackingAssetId, content: "rbxassetid://"+data.BackingAssetId});
-            if (deletePreview) {
+            if (toDelete || deletePreview) {
                 try {
                    let directories = await getPreviewDirectory();
-                    directories.shift();
+                   if (deletePreview && !toDelete) {
+                        directories.shift();
+                   }
                     for (let dir of directories) {
                         await fs.remove(dir + "/" + fileName);
                     }
-                    console.log("Deleted previews");
+                    if (deletePreview && !toDelete) {
+                        console.log("Deleted preview");
+                    }
+                    else {
+                        console.log("Delete screenshot");
+                    }
                 }
                 catch (err) {
-                    console.log("Failed to delete preview, but succeeded at uploading screenshot.");
+                    console.log("Failed to delete screenshot or preview, but succeeded at uploading screenshot.");
                 }
             }
         }

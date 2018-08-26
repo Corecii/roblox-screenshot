@@ -167,6 +167,7 @@ if RUN_LOGIN_TESTS then
 	scr:Upload{
 		"test-11",
 		"test upload",
+		delete = true,
 	}:Print("Upload test-11 registry "):Assert()
 end
 

@@ -5,7 +5,7 @@
  
  For docs, see [`module.lua`](https://github.com/Corecii/roblox-screenshot/blob/master/module.lua).
 
- For examples, see [`TestsAndExamples.lua`](https://github.com/Corecii/roblox-screenshot/blob/master/TestsAndExamples.lua)
+ For examples, see [`ExamplePatterns.lua`](https://github.com/Corecii/roblox-screenshot/blob/master/ExamplePatterns.lua) and [`Tests.lua`](https://github.com/Corecii/roblox-screenshot/blob/master/Tests.lua).
 
  You can use the module in Studio at any time with
 

@@ -17,12 +17,21 @@ Result API:
 	bool .success
 	number .errorCode
 	string .error
-	void :Assert([string message])
+	Result :Assert()
 		Errors if this result did not succeed.
-		Errors with `message` if provided or with errorCode and error if not provided.
+		Errors with the errorCode and error.
+		Returns self.
+	Result :AssertIgnore(string [1], string [2], string [3], ...)
+		The parameters act as errors to ignore
+		Errors if this result did not succeed.
+		Errors with the errorCode and error.
+		Returns self.
 	bool :IsError(string errorName)
-		Returns if this result is an instance of the given error.
-		Errors if errorName is invalid.
+		Returns whether this result is an instance of the given errors.
+		Errors if any of the given error names are invalid.
+	bool :IsAnyError(string [1], string [2], string [3], ...)
+		Returns whether this result is an instance of any of the given errors.
+		Errors if any of the given error names are invalid.
 	string :ToString()
 		Gets a string representation of this result for debugging
 	Result :Print(string prefix)
@@ -414,13 +423,23 @@ local errorCodes = {
 
 local resultMeta = {}
 resultMeta.__index = resultMeta
-function resultMeta:Assert(message)
+function resultMeta:Assert()
 	if not self.success then
-		if message then
-			error(message)
-		else
-			error("("..tostring(self.errorCode)..") "..tostring(self.error))
+		error("("..tostring(self.errorCode)..") "..tostring(self.error))
+	end
+	return self
+end
+function resultMeta:AssertIgnore(...)
+	local args = {...}
+	if not self.success then
+		if args and #args > 0 then
+			for i = 1, #args do
+				if self:IsError(args[i]) then
+					return
+				end
+			end
 		end
+		error("("..tostring(self.errorCode)..") "..tostring(self.error))
 	end
 	return self
 end
@@ -438,6 +457,26 @@ function resultMeta:IsError(name)
 		return self.errorCode and check(self.errorCode) or false
 	else
 		error("Unknown check type ("..typeof(check)..")")
+	end
+end
+function resultMeta:IsAnyError(...)
+	local args = {...}
+	if not args or #args == 0 then
+		return self.errorCode and true or false
+	end
+	for i = 1, #args do
+		local name = args[i]
+		local check = errorCodes[name]
+		if not check then
+			error("Unknown error name '"..tostring(name).."' ("..typeof(name)..")")
+		end
+		if type(check) == "number" then
+			return self.errorCode == check
+		elseif type(check) == "function" then
+			return self.errorCode and check(self.errorCode) or false
+		else
+			error("Unknown check type ("..typeof(check)..")")
+		end
 	end
 end
 function resultMeta:ToString()
@@ -609,7 +648,7 @@ end
 
 function object:Upload(args)
 	args = args or {}
-	limitArgs("Upload", args, {1, 2, 3, "destination", "name", "groupId", "cookie", "deletePreview"})
+	limitArgs("Upload", args, {1, 2, 3, "destination", "name", "groupId", "cookie", "deletePreview", "delete"})
 	typeCheck("parameter 1", {"string", "nil"}, args[1])
 	typeCheck("destination", {"string", "nil"}, args.destination)
 	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
@@ -617,18 +656,21 @@ function object:Upload(args)
 	typeCheck("name", {"string", "nil"}, args.name)
 	typeCheck("parameter 3", {"string", "nil"}, args[3])
 	typeCheck("groupId", {"number", "nil"}, args.groupId)
-	typeCheck("deletePreview", {"boolean", "nil"}, args.name)
+	typeCheck("deletePreview", {"boolean", "nil"}, args.deletePreview)
+	typeCheck("delete", {"boolean", "nil"}, args.delete)
 	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
 	local name = args[2] or args.name
 	local groupId = args[3] or args.groupId
 	local cookie = args.cookie or self.cookie
 	local deletePreview = args.deletePreview
+	local delete = args.delete
 	local result = makeApiRequest(self.url, "/upload", "POST", {
 		destination = destination,
 		name = name,
 		groupId = groupId,
 		cookie = cookie,
 		deletePreview = deletePreview,
+		delete = delete,
 	}, self.autoRetry)
 	return result
 end
