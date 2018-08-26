@@ -305,7 +305,15 @@ app.post('/upload',
             data = JSON.parse(dataString); // we can't use the `json: true` of request because the *request* needs to be non-json
             if (!data.Success) {
                 console.log("Upload error:",data);
-                response.send({success: false, errorCode: 220, error: dataString});
+                if (data.Message && data.Message.search("You are uploading too much") != -1) {
+                    console.log("Upload failed (uploading too much)");
+                    response.send({success: false, errorCode: 211, error: "Uploading too much"});
+                } else if (data.Message && data.Message.search("inappropriate") != -1) {
+                    console.log("Upload failed (inappropriate text)");
+                    response.send({success: false, errorCode: 212, error: "Inappropriate text"});
+                } else {
+                    response.send({success: false, errorCode: 220, error: dataString});
+                }
                 return;
             }
             console.log("Uploaded! At: " + data.BackingAssetId);
@@ -336,12 +344,6 @@ app.post('/upload',
             if (err.message && err.message.search("/NewLogin") != -1) {
                 console.log("Upload failed (not logged in)");
                 response.send({success: false, errorCode: 210, error: "Not logged in"});
-            } else if (err.message && err.message.search("You are uploading too much") != -1) {
-                console.log("Upload failed (uploading too much)");
-                response.send({success: false, errorCode: 211, error: "Uploading too much"});
-            } else if (err.message && err.message.search("inappropriate") != -1) {
-                console.log("Upload failed (inappropriate text)");
-                response.send({success: false, errorCode: 212, error: "Inappropriate text"});
             } else {
                 console.log("Upload failed (unknown/generic)");
                 response.send({success: false, errorCode: 200, error: err.toString()});

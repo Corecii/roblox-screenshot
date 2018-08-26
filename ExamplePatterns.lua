@@ -94,6 +94,7 @@ for _, model in next, workspace.Models:GetChildren() do
 		result = scr:Screenshot{
 			destination = model.Name,
 			preview = true,
+			mask = true,
 		}:Assert()
 		-- set or create the ImageContent value which will store the preview image or uploaded image
 		local imageContentValue = model:FindFirstChild("ImageContent")

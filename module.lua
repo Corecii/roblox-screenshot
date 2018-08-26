@@ -86,12 +86,16 @@ Screenshotter API:
 		string destination/[1]
 		optional string name/[2]
 		optional number groupId/[3]
-		optional bool deletePreview
+		optional bool deletePreview = false
+		optional bool delete = false
+		optional bool autoRetry = false
 		optional string cookie
 	}
 		Uploads the screenshot with the given destination to Roblox.
 		If name is not provided then the destination is used.
 		If deletePreview is true then any previews of the image are deleted *only if uploading succeeds*. Errors encountered while deleting the previews are not returned.
+		If delete is true then the screenshot and any previews of the image are delete *only is uploading succeeds*. Errors encountered while deleting the are not returned.
+		If autoRetry is true then the request is retried every 60 seconds if the user is uploading too much.
 		If cookie is not provided then the internal cookie from :Login is used.
 		result:
 			`destination` is the sanitized `destination`
@@ -648,7 +652,7 @@ end
 
 function object:Upload(args)
 	args = args or {}
-	limitArgs("Upload", args, {1, 2, 3, "destination", "name", "groupId", "cookie", "deletePreview", "delete"})
+	limitArgs("Upload", args, {1, 2, 3, "destination", "name", "groupId", "cookie", "deletePreview", "delete","autoRetry"})
 	typeCheck("parameter 1", {"string", "nil"}, args[1])
 	typeCheck("destination", {"string", "nil"}, args.destination)
 	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
@@ -658,20 +662,29 @@ function object:Upload(args)
 	typeCheck("groupId", {"number", "nil"}, args.groupId)
 	typeCheck("deletePreview", {"boolean", "nil"}, args.deletePreview)
 	typeCheck("delete", {"boolean", "nil"}, args.delete)
+	typeCheck("autoRetry", {"boolean", "nil"}, args.autoRetry)
 	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
 	local name = args[2] or args.name
 	local groupId = args[3] or args.groupId
 	local cookie = args.cookie or self.cookie
 	local deletePreview = args.deletePreview
 	local delete = args.delete
-	local result = makeApiRequest(self.url, "/upload", "POST", {
-		destination = destination,
-		name = name,
-		groupId = groupId,
-		cookie = cookie,
-		deletePreview = deletePreview,
-		delete = delete,
-	}, self.autoRetry)
+	local autoRetry = args.autoRetry
+	local result
+	while not result do
+		result = makeApiRequest(self.url, "/upload", "POST", {
+			destination = destination,
+			name = name,
+			groupId = groupId,
+			cookie = cookie,
+			deletePreview = deletePreview,
+			delete = delete,
+		}, self.autoRetry)
+		if autoRetry and not result.success and result:IsError("UploadTooOften") then
+			result = nil
+			wait(60)
+		end
+	end
 	return result
 end
 
