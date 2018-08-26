@@ -5,7 +5,6 @@ const screenshot = require('screenshot-desktop');
 const fs = require('fs-extra');
 const path = require('path');
 const jimp = require('jimp');
-const robloxjs = require('roblox-js');
 const request = require("request-promise");
 const parseDomain = require("parse-domain");
 const tough = require('tough-cookie');

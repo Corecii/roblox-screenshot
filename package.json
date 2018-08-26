@@ -2,6 +2,10 @@
   "name": "roblox-screenshot",
   "version": "1.2.0",
   "description": "A server that takes screenshots of the Roblox Studio viewport, previews screenshots, and uploads screenshots.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Corecii/roblox-screenshot.git"
+  },
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -18,7 +22,6 @@
     "querystring": "^0.2.0",
     "request": "^2.88.0",
     "request-promise": "^4.2.2",
-    "roblox-js": "^4.0.2",
     "sanitize-filename": "^1.6.1",
     "screenshot-desktop": "git+https://git@github.com/Corecii/screenshot-desktop.git",
     "sprintf-js": "^1.1.1",
