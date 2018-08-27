@@ -439,7 +439,7 @@ function resultMeta:AssertIgnore(...)
 		if args and #args > 0 then
 			for i = 1, #args do
 				if self:IsError(args[i]) then
-					return
+					return self
 				end
 			end
 		end
