@@ -129,6 +129,12 @@ Screenshotter API:
 	void :LoadCameraState()
 		Restores the saved camera state.
 
+	result{number fov} :GetCameraFovForSize{
+		number fov
+		Vector2 size
+	}
+		Gets the actual vertical FoV needed for the given region in the middle of the screen with size `size` to have the given vertical FoV `fov`.
+
 	result{Vector3 position, CFrame cframe, CFrame focus, number fov} :GetCameraParams{
 		number fov
 		optional Vector2 size
@@ -140,12 +146,14 @@ Screenshotter API:
 
 		optional Array<Vector3> points
 		optional Array<Instance> parts
+
+		optional CFrame cframe
 	}
-	Gets the required camera parameters to fit the radius, points, or parts within a center part of the screen with the given size, FoV, and direction (vector).
-	If `size` is not provided, it defaults to the full screen size.
-	If `upVector` is not provided then it defaults to the vector nearest to Vector3.new(0, 1, 0) or Vector3.new(1, 0, 0)
-	You can provide either radiusCenter and radius OR an array of points and/or parts.
-	If you provide points, then the # of points must be greater than 1.
+		Gets the required camera parameters to fit the radius, points, or parts within a center part of the screen with the given size, FoV, and direction (vector).
+		If `size` is not provided, it defaults to the full screen size.
+		If `upVector` is not provided then it defaults to the vector nearest to Vector3.new(0, 1, 0) or Vector3.new(1, 0, 0)
+		You can provide either radiusCenter and radius OR an array of points and/or parts OR a camera cframe (where it will only solve for needed FoV).
+		If you provide points, then the # of points must be greater than 1.
 
 	result{Vector3 position, CFrame cframe, CFrame focus, number fov} :CenterCamera{
 		optional Camera camera,
@@ -159,8 +167,10 @@ Screenshotter API:
 
 		optional Array<Vector3> points
 		optional Array<Instance> parts
+
+		optional CFrame cframe
 	}
-	Calls GetCameraParams then applies them to the camera.
+		Calls GetCameraParams then applies them to the camera.
 
 Error codes for use with IsError:
 	Generic (category)
@@ -304,13 +314,13 @@ else
 	function dbgWarn() end
 end
 
-local function typeCheck(name, allowed, ...)
+local function typeCheck(name, allowed, count, ...)
 	local allowedDict = {}
 	for i = 1, #allowed do
 		allowedDict[allowed[i]] = true
 	end
 	local args = {...}
-	for i = 1, #args do
+	for i = 1, count do
 		local iType = typeof(args[i])
 		if iType == "Instance" and not allowedDict.Instance then
 			local arg = args[i]
@@ -585,10 +595,10 @@ end
 function object:Calibrate(args)
 	args = args or {}
 	limitArgs("Calibrate", args, {1, 2, "color", "tolerance"})
-	typeCheck("parameter 1", {"Color3", "nil"}, args[1])
-	typeCheck("color", {"Color3", "nil"}, args.color)
-	typeCheck("parameter 2", {"number", "nil"}, args[2])
-	typeCheck("tolerance", {"number", "nil"}, args.tolerance)
+	typeCheck("parameter 1", {"Color3", "nil"}, 1, args[1])
+	typeCheck("color", {"Color3", "nil"}, 1, args.color)
+	typeCheck("parameter 2", {"number", "nil"}, 1, args[2])
+	typeCheck("tolerance", {"number", "nil"}, 1, args.tolerance)
 
 	local color = args[1] or args.color or Color3.new(1, 0, 1)
 	local tolerance = args[2] or args.tolerance or 0
@@ -613,24 +623,24 @@ function object:Login(args)
 	local cookie = args.cookie
 	if cookie then
 		-- skip the login process
-		typeCheck("cookie", {"string"}, cookie)
+		typeCheck("cookie", {"string"}, 1, cookie)
 		self.cookie = cookie
 		return asResult{success = true, cookie = cookie}
 	end
 	if args.registry then
-		typeCheck("registry", {"boolean"}, args.registry)
+		typeCheck("registry", {"boolean"}, 1, args.registry)
 		local result = makeApiRequest(self.url, "/login", "POST", {
 			registry = true,
 		}, self.autoRetry)
 		self.cookie = result.cookie -- if the request fails then the cookie is cleared.
 		return result
 	end
-	typeCheck("parameter 1", {"string", "nil"}, args[1])
-	typeCheck("username", {"string", "nil"}, args.username)
-	typeCheck("parameter 1 or username", {"string"}, args[1] or args.username)
-	typeCheck("parameter 2", {"string", "nil"}, args[2])
-	typeCheck("password", {"string", "nil"}, args.password)
-	typeCheck("parameter 2 or password", {"string"}, args[2] or args.password)
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("username", {"string", "nil"}, 1, args.username)
+	typeCheck("parameter 1 or username", {"string"}, 1, args[1] or args.username)
+	typeCheck("parameter 2", {"string", "nil"}, 1, args[2])
+	typeCheck("password", {"string", "nil"}, 1, args.password)
+	typeCheck("parameter 2 or password", {"string"}, 1, args[2] or args.password)
 	local username = args[1] or args.username or error("Username ([1] or ['username']) argument required")
 	local password = args[2] or args.password or error("Password ([2] or ['password']) argument required")
 	local result = makeApiRequest(self.url, "/login", "POST", {
@@ -653,16 +663,16 @@ end
 function object:Upload(args)
 	args = args or {}
 	limitArgs("Upload", args, {1, 2, 3, "destination", "name", "groupId", "cookie", "deletePreview", "delete","autoRetry"})
-	typeCheck("parameter 1", {"string", "nil"}, args[1])
-	typeCheck("destination", {"string", "nil"}, args.destination)
-	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
-	typeCheck("parameter 2", {"string", "nil"}, args[2])
-	typeCheck("name", {"string", "nil"}, args.name)
-	typeCheck("parameter 3", {"string", "nil"}, args[3])
-	typeCheck("groupId", {"number", "nil"}, args.groupId)
-	typeCheck("deletePreview", {"boolean", "nil"}, args.deletePreview)
-	typeCheck("delete", {"boolean", "nil"}, args.delete)
-	typeCheck("autoRetry", {"boolean", "nil"}, args.autoRetry)
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
+	typeCheck("parameter 2", {"string", "nil"}, 1, args[2])
+	typeCheck("name", {"string", "nil"}, 1, args.name)
+	typeCheck("parameter 3", {"string", "nil"}, 1, args[3])
+	typeCheck("groupId", {"number", "nil"}, 1, args.groupId)
+	typeCheck("deletePreview", {"boolean", "nil"}, 1, args.deletePreview)
+	typeCheck("delete", {"boolean", "nil"}, 1, args.delete)
+	typeCheck("autoRetry", {"boolean", "nil"}, 1, args.autoRetry)
 	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
 	local name = args[2] or args.name
 	local groupId = args[3] or args.groupId
@@ -691,9 +701,9 @@ end
 function object:Preview(args)
 	args = args or {}
 	limitArgs("Preview", args, {1, "destination"})
-	typeCheck("parameter 1", {"string", "nil"}, args[1])
-	typeCheck("destination", {"string", "nil"}, args.destination)
-	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
 	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
 	local result = makeApiRequest(self.url, "/preview", "POST", {
 		destination = destination
@@ -704,9 +714,9 @@ end
 function object:Unpreview(args)
 	args = args or {}
 	limitArgs("Unpreview", args, {1, "destination"})
-	typeCheck("parameter 1", {"string", "nil"}, args[1])
-	typeCheck("destination", {"string", "nil"}, args.destination)
-	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
 	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
 	local result = makeApiRequest(self.url, "/unpreview", "POST", {
 		destination = destination
@@ -717,9 +727,9 @@ end
 function object:Delete(args)
 	args = args or {}
 	limitArgs("Unpreview", args, {1, "destination"})
-	typeCheck("parameter 1", {"string", "nil"}, args[1])
-	typeCheck("destination", {"string", "nil"}, args.destination)
-	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
 	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
 	local result = makeApiRequest(self.url, "/delete", "POST", {
 		destination = destination
@@ -730,16 +740,16 @@ end
 function object:Screenshot(args)
 	args = args or {}
 	limitArgs("Screenshot", args, {1, 2, 3, "destination", "mask", "crop", "preview", "showMouseIcon", "showGui"})
-	typeCheck("parameter 1", {"string", "nil"}, args[1])
-	typeCheck("destination", {"string", "nil"}, args.destination)
-	typeCheck("parameter 1 or destination", {"string"}, args[1] or args.destination)
-	typeCheck("parameter 2", {"boolean", "number", "nil"}, args[3])
-	typeCheck("mask", {"boolean", "number", "nil"}, args.mask)
-	typeCheck("parameter 3", {"Vector2", "Rect", "nil"}, args[2])
-	typeCheck("crop", {"Vector2", "Rect", "nil"}, args.crop)
-	typeCheck("preview", {"boolean", "nil"}, args.preview)
-	typeCheck("showMouseIcon", {"boolean", "nil"}, args.showMouseIcon)
-	typeCheck("showGui", {"boolean", "nil"}, args.showGui)
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
+	typeCheck("parameter 2", {"boolean", "number", "nil"}, 1, args[3])
+	typeCheck("mask", {"boolean", "number", "nil"}, 1, args.mask)
+	typeCheck("parameter 3", {"Vector2", "Rect", "nil"}, 1, args[2])
+	typeCheck("crop", {"Vector2", "Rect", "nil"}, 1, args.crop)
+	typeCheck("preview", {"boolean", "nil"}, 1, args.preview)
+	typeCheck("showMouseIcon", {"boolean", "nil"}, 1, args.showMouseIcon)
+	typeCheck("showGui", {"boolean", "nil"}, 1, args.showGui)
 	local destination = args[1] or args.destination
 	local crop = args[2] or args.crop
 	local mask = args[3] or args.mask or false
@@ -830,11 +840,12 @@ end
 function object:SaveCameraState(args)
 	args = args or {}
 	limitArgs("SaveCameraState", args, {1, "camera"})
-	typeCheck("parameter 1", {"Camera", "nil"}, args[1])
-	typeCheck("camera", {"Camera", "nil"}, args.camera)
+	typeCheck("parameter 1", {"Camera", "nil"}, 1, args[1])
+	typeCheck("camera", {"Camera", "nil"}, 1, args.camera)
 	local camera = args[1] or args.camera or workspace.CurrentCamera
 	self.cameraState = {
 		camera = camera,
+		cameraType = camera.CameraType,
 		cframe = camera.CFrame,
 		focus = camera.Focus,
 		fov = camera.FieldOfView,
@@ -847,6 +858,7 @@ function object:LoadCameraState()
 	end
 	local cameraState = self.cameraState
 	local camera = cameraState.camera
+	camera.CameraType = cameraState.cameraType
 	camera.CFrame = cameraState.cframe
 	camera.Focus = cameraState.focus
 	camera.FieldOfView = cameraState.fov
@@ -893,39 +905,70 @@ local function rotateVectorTowards(vector1, vector2, angle)
 	return math.cos(angle)*vector1 + math.sin(angle)*vector2_t
 end
 
+function object:GetCameraFovForSize(args)
+	args = args or {}
+	limitArgs("GetCameraParams", args, {1, "size", "fov"})
+	typeCheck("size", {"Vector2"}, 1, args.size)
+	typeCheck("fov", {"number"}, 1, args.fov)
+	local size = args.size
+	local fov = args.fov
+
+	local camera = workspace.CurrentCamera
+	local screenSize = camera.ViewportSize
+	if size.x > screenSize.x or size.y > screenSize.y then
+		return asResult{success = false, errorCode = 801, error = "size is bigger than screenSize: "..tostring(size).." > "..tostring(screenSize)}
+	end
+
+	if fov > 120 or fov < 1 then
+		return asResult{success = false, errorCode = 802, error = "fov is bigger than max (120) or smaller than min (1)"}
+	end
+
+	local actualFov = getDenominatorFov(size.y/screenSize.y, fov)
+
+	if actualFov > 120 or actualFov < 1 then
+		return asResult{success = false, errorCode = 803, fov = actualFov, error = "Needed fov is bigger than max (120) or smaller than min (1). Make your screen size closer to size. Needed fov: "..tostring(actualFov)}
+	end
+
+	return asResult{success = true, fov = actualFov}
+end
+
 local defaultUpVector1 = Vector3.new(0, 1, 0)
 local defaultUpVector2 = Vector3.new(1, 0, 0)
 function object:GetCameraParams(args)
 	args = args or {}
-	limitArgs("GetCameraParams", args, {1, "camera", "size", "fov", "vector", "upVector", "radiusCenter", "radius", "points", "parts"})
-	typeCheck("parameter 1", {"Camera", "nil"}, args[1])
-	typeCheck("camera", {"Camera", "nil"}, args.camera)
-	typeCheck("size", {"Vector2", "nil"}, args.size)
-	typeCheck("fov", {"number"}, args.fov)
-	typeCheck("vector", {"Vector3"}, args.vector)
-	typeCheck("upVector", {"Vector3", "nil"}, args.upVector)
-	typeCheck("radiusCenter", {"Vector3", "nil"}, args.radiusCenter)
-	typeCheck("radius", {"number", "nil"}, args.radius)
-	typeCheck("points", {"table", "nil"}, args.points)
-	typeCheck("parts", {"table", "Instance", "nil"}, args.parts)
-	if not (args.radiusCenter and args.radius) and not args.points and not args.parts then
-		error("(radiusCenter and radius) or points or parts arguments requires")
+	limitArgs("GetCameraParams", args, {1, "camera", "size", "fov", "vector", "upVector", "radiusCenter", "radius", "points", "parts", "cframe"})
+	typeCheck("parameter 1", {"Camera", "nil"}, 1, args[1])
+	typeCheck("camera", {"Camera", "nil"}, 1, args.camera)
+	typeCheck("size", {"Vector2", "nil"}, 1, args.size)
+	typeCheck("fov", {"number"}, 1, args.fov)
+	typeCheck("vector", {"Vector3", args.cframe and "nil"}, 1, args.vector)
+	typeCheck("upVector", {"Vector3", "nil"}, 1, args.upVector)
+	typeCheck("radiusCenter", {"Vector3", "nil"}, 1, args.radiusCenter)
+	typeCheck("radius", {"number", "nil"}, 1, args.radius)
+	typeCheck("points", {"table", "nil"}, 1, args.points)
+	typeCheck("parts", {"table", "Instance", "nil"}, 1, args.parts)
+	typeCheck("cframe", {"CFrame", "nil"}, 1, args.cframe)
+	if not (args.radiusCenter and args.radius) and not args.points and not args.parts and not args.cframe then
+		error("One of (radiusCenter and radius) or points or parts or cframe arguments requires")
 	end
 	local size = args.size
 	local fov = args.fov
 
-	local vector = args.vector.Unit
-	local upVector = args.upVector
-	if not upVector then
-		local defaultUpVector = defaultUpVector1
-		if math.abs(defaultUpVector:Dot(vector)) == 1 then
-			defaultUpVector = defaultUpVector2
+	local vector, upVector, rightVector
+	if args.vector then
+		vector = args.vector.Unit
+		upVector = args.upVector
+		if not upVector then
+			local defaultUpVector = defaultUpVector1
+			if math.abs(defaultUpVector:Dot(vector)) == 1 then
+				defaultUpVector = defaultUpVector2
+			end
+			local tmpRightVector = defaultUpVector:Cross(vector)
+			upVector = vector:Cross(tmpRightVector).Unit
 		end
-		local rightVector = defaultUpVector:Cross(vector)
-		upVector = vector:Cross(rightVector).Unit
+		upVector = upVector.Unit
+		rightVector = -upVector:Cross(vector).Unit
 	end
-	upVector = upVector.Unit
-	local rightVector = -upVector:Cross(vector).Unit
 
 	local radiusCenter = args.radiusCenter
 	local radius = args.radius
@@ -933,6 +976,8 @@ function object:GetCameraParams(args)
 	local points = args.points
 
 	local parts = args.parts
+
+	local setCameraCFrame = args.cframe
 
 	local camera = workspace.CurrentCamera
 	local screenSize = camera.ViewportSize
@@ -951,6 +996,10 @@ function object:GetCameraParams(args)
 
 	if actualFov > 120 or actualFov < 1 then
 		return asResult{success = false, errorCode = 803, fov = actualFov, error = "Needed fov is bigger than max (120) or smaller than min (1). Make your screen size closer to size. Needed fov: "..tostring(actualFov)}
+	end
+
+	if setCameraCFrame then
+		return asResult{success = true, position = setCameraCFrame.p, cframe = setCameraCFrame, focus = setCameraCFrame*CFrame.new(0, 0, 1), fov = actualFov}
 	end
 
 	-- sorry for the case switch (camelCase to snake_case) in the following sections, snake_case is easier to comprehend for math stuff

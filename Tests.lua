@@ -26,11 +26,8 @@ scr:SaveCameraState{}
 scr:CenterCamera{
 	size = Vector2.new(300, 500),
 	fov = 90,
-	vector = Vector3.new(0, -1, 1),
-
-	radiusCenter = workspace.RadiusTestPart.Position,
-	radius = workspace.RadiusTestPart.Size.x/2,
-}:Print("CenterCamera "):Assert()
+	cframe = CFrame.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 1)),
+}:Print("CenterCamera 1"):Assert()
 
 wait(1)
 
@@ -38,9 +35,20 @@ scr:CenterCamera{
 	size = Vector2.new(300, 500),
 	fov = 90,
 	vector = Vector3.new(0, -1, 1),
+	
+	radiusCenter = workspace.RadiusTestPart.Position,
+	radius = workspace.RadiusTestPart.Size.x/2,
+}:Print("CenterCamera 2"):Assert()
 
+wait(1)
+
+scr:CenterCamera{
+	size = Vector2.new(300, 500),
+	fov = 90,
+	vector = Vector3.new(0, -1, 1),
+	
 	parts = workspace["Observation Tower"],
-}:Print("CenterCamera "):Assert()
+}:Print("CenterCamera 3"):Assert()
 
 -- Test various forms of Screenshot:
 
