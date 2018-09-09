@@ -78,3 +78,30 @@
  
  * `screenshot-desktop` does this because it uses some changes I made to add `png` support.
  * `tough-cookie` and `winreg` do this because I was having issues with their npm packages, but the versions on github do not have the issues.
+
+### HTTP API doesn't do validation
+
+ Since roblox-screenshot is meant to be used from the Lua module, the Lua module does all of the validation. The Node HTTP API doesn't do any validation and will just error if used incorrectly. The main exception to this is that file names are sanitized, so it's not possible to create or delete files outside of `screenshots` and `previews` using roblox-screenshot.
+
+### `roblox-screenshot` does not check what is using it
+
+ Any program on the computer can use roblox-screenshot to take screenshots, and roblox-screenshot might be open to other computer on the local network or the internet if you have a public IP and no firewall. This is not a major issue because:
+
+ * Any program that can use roblox-screenshot to take screenshots could do so itself. Any program that can use roblox-screenshot to make many files/folders for malicious purposes could do so itself much faster than it could by using roblox-screenshot.
+ * It's highly unlikely for anyone to target roblox-screenshot from other computer.
+ * roblox-screenshot does not release any useful information in its API results. It does not serve up images of screenshots, it does not allow modifying files outside of its `screenshots` or `previews` directories, and it does not allow writing or reading arbitrary data.
+
+ These issues can be solved with some sort of key authentication where the user has to grant programs and processes the ability to use roblox-screenshot. This is a nice long-term goal, and will fit best if roblox-screenshot ever has a better user-facing UI using something like Electron.
+
+ As it is, the risks are not great enough to focus significant time on this.
+
+---
+
+## TODO
+
+* Utility API for creating pseudo-particles that stay static between masked screenshots
+* Find a background object that is unaffected by fog
+* API to get existing spritesheet info saved in json files
+* API to get directory contents
+* Support `directory` arguments in `Preview` and `Unpreview` endpoints
+* Add key authentication

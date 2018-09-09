@@ -1,21 +1,21 @@
 "use strict";
 
-const express = require('express');
-const screenshot = require('screenshot-desktop');
-const fs = require('fs-extra');
-const path = require('path');
-const jimp = require('jimp');
+const express = require("express");
+const screenshot = require("screenshot-desktop");
+const fs = require("fs-extra");
+const jimp = require("jimp");
 const request = require("request-promise");
 const parseDomain = require("parse-domain");
-const tough = require('tough-cookie');
-const sprintf = require('sprintf-js').sprintf;
-const escape = require('querystring').escape;
+const sprintf = require("sprintf-js").sprintf;
+const escape = require("querystring").escape;
 const sanitizeFilename = require("sanitize-filename");
+const recursiveReaddir = require("recursive-readdir");
+const upath = require("upath");
 
 const DEBUG_MODE = false;
 
 const screenshotOptions = {
-    format: 'png'
+    format: "png"
 };
 
 let debugWrite;
@@ -67,7 +67,7 @@ async function getRobloxContentDirectory() {
         console.error("Versions directory does not exist (`"+versionsPath+"`)");
         return undefined;
     }
-    let versionsFile = await fs.open(versionsPath, 'r');
+    let versionsFile = await fs.open(versionsPath, "r");
     let versionsStat = await fs.fstat(versionsFile);
     if (!versionsStat.isDirectory()) {
         console.error("Versions is not a directory (`"+versionsPath+"`)");
@@ -88,12 +88,12 @@ async function getRobloxContentDirectory() {
 }
 
 async function getPreviewDirectory() {
-    let localDir = path.resolve("./screenshots");
+    let localDir = upath.resolve("./screenshots");
     if (!await fs.exists(localDir)) {
         await fs.mkdir(localDir);
     }
     if (settings.allow_previews) {
-        let localPreviewDir = path.resolve("./previews");
+        let localPreviewDir = upath.resolve("./previews");
         if (!await fs.exists(localPreviewDir)) {
             await fs.mkdir(localPreviewDir);
         }
@@ -108,6 +108,57 @@ async function getPreviewDirectory() {
         return [localDir, localPreviewDir, previewDir];
     }
     return [localDir];
+}
+
+function getFilePath(fileName) {
+    let parts = fileName.split("/");
+    for (let index in parts) {
+        parts[index] = sanitizeFilename(parts[index]);
+    }
+    return parts.join("/");
+}
+
+function isWithin(dir, parent) {
+    const relative = upath.relative(parent, dir);
+    return !!relative && !relative.startsWith("..") && !upath.isAbsolute(relative);
+}
+
+async function getNameFromAbsolutePath(absolutePath) {
+    let directories = await getPreviewDirectory();
+    for (let parent of directories) {
+        if (isWithin(absolutePath, parent)) {
+            let relativePath = upath.relative(parent, absolutePath);
+            let directoryName = upath.dirname(relativePath);
+            let baseName = upath.basename(relativePath);
+            baseName = baseName.replace(/\.png$/, "").replace(/\.json$/, "");
+            return directoryName+"/"+baseName;
+        }
+    }
+    return absolutePath;
+}
+
+async function forDirectoryDestination(info, func, directories) {
+    if (info.directory) {
+        let directory = getFilePath(info.directory);
+        let folderPath = directories[0]+"/"+directory;
+        let imageFilePaths;
+        if (info.recursive) {
+            imageFilePaths = await recursiveReaddir(folderPath);
+        } else {
+            imageFilePaths = await fs.readdir(folderPath);
+        }
+        for (let imageFilePath of imageFilePaths) {
+            if (imageFilePath.match("\\.png$")) {
+                let name = await getNameFromAbsolutePath(imageFilePath);
+                await func(name, imageFilePath);
+            }
+        }
+    }
+    if (info.destination) {
+        let destination = getFilePath(info.destination);
+        let imageFilePath = directories[0]+"/"+destination+".png";
+        await func(info.destination, imageFilePath);
+    }
 }
 
 const tokens = {};
@@ -168,7 +219,7 @@ async function robloxLogin(username, password) {
     throw new Error({error: "No cookie returned", response: response});
 }
 
-const uploadUrl = 'http://data.roblox.com/data/upload/json?assetTypeId=%i&name=%s&description=%s&groupId=%s'
+const uploadUrl = "http://data.roblox.com/data/upload/json?assetTypeId=%i&name=%s&description=%s&groupId=%s";
 async function uploadImage(name, imagePath, groupId, cookie) {
     try {
         let fileBuffer = await fs.readFile(imagePath);
@@ -176,10 +227,10 @@ async function uploadImage(name, imagePath, groupId, cookie) {
             method: "POST",
             url: sprintf(uploadUrl, 13, escape(name), "", groupId || ""),
             headers: {
-                'Cookie': '.ROBLOSECURITY=' + cookie + ';',
-                'Host': 'data.roblox.com',
-                'Content-type': "*/*",
-                'User-Agent': 'Roblox/WinInet',
+                "Cookie": ".ROBLOSECURITY=" + cookie + ";",
+                "Host": "data.roblox.com",
+                "Content-type": "*/*",
+                "User-Agent": "Roblox/WinInet",
             },
             body: fileBuffer, //fs.createReadStream(imagePath),
             json: false,
@@ -199,7 +250,7 @@ async function getRegistryCookie() {
             key: "\\Software\\Roblox\\RobloxStudioBrowser\\roblox.com"
         });
         let cookieItem = await new Promise((resolve, reject) => {
-            regKey.get('.ROBLOSECURITY', function(err, item) {
+            regKey.get(".ROBLOSECURITY", function(err, item) {
                 if (err)
                     reject(err);
                 else
@@ -217,8 +268,10 @@ async function getRegistryCookie() {
 
 async function previewImage(name) {
     let directories = await getPreviewDirectory();
+    await fs.ensureFile(directories[1]+"/"+name);
+    await fs.ensureFile(directories[2]+"/"+name);
     await fs.copy(directories[0]+"/"+name, directories[1]+"/"+name);
-    await fs.copy(directories[1]+"/"+name, directories[2]+"/"+name);
+    await fs.copy(directories[0]+"/"+name, directories[2]+"/"+name);
 }
 
 const app = express();
@@ -228,14 +281,14 @@ let calibration = {
     end: [0, 0]
 };
 
-app.get('/settings',
+app.get("/settings",
     express.json(),
     async (request, response) => {
         response.send({success: true, settings: settings});
     }
 );
 
-app.post('/login',
+app.post("/login",
     express.json(),
     async (request, response) => {
         console.log("Received login request:",request.body);
@@ -266,7 +319,49 @@ app.post('/login',
     }
 );
 
-app.post('/upload',
+app.post("/calibrate",
+    express.json(),
+    async (request, response) => {
+        console.log("Received calibrate request",request.body);
+        let color = request.body.color;
+        let tolerance = request.body.tolerance;
+        let r = color[0], g = color[1], b = color[2];
+        try {
+            let scrBuffer = await screenshot(screenshotOptions);
+            let image = await jimp.read(scrBuffer);
+            let start = null;
+            let end = null;
+            image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
+                var red   = this.bitmap.data[ idx + 0 ];
+                var green = this.bitmap.data[ idx + 1 ];
+                var blue  = this.bitmap.data[ idx + 2 ];
+                if (Math.abs(red - r) <= tolerance && Math.abs(green - g) <= tolerance && Math.abs(blue - b) <= tolerance) {
+                    if (!start || x + y <= start[0] + start[1]) {
+                        start = [x, y];
+                    }
+                    if (!end || x + y >= end[0] + end[1]) {
+                        end = [x, y];
+                    }
+                }
+            });
+            if (start && end && start[0] <= end[0] && start[1] <= end[1]) {
+                calibration.start = start;
+                calibration.end = end;
+                console.log("Calibrate finished: (",start,") to (",end,")");
+                response.send({success: true, calibration: calibration});
+            } else {
+                console.log("Calibration failed (could not find start and end)");
+                response.send({success: false, errorCode: 401, error: "Could not find start and end"});
+            }
+        }
+        catch (err) {
+            console.log("Calibration failed:",err);
+            response.send({success: false, errorCode: 400, error: err.toString()});
+        }
+    }
+);
+
+app.post("/upload",
     express.json(),
     async (request, response) => {
         console.log("Received upload request",request.body);
@@ -275,7 +370,7 @@ app.post('/upload',
             response.send({success: false, errorCode: 14, error: "Uploads have been disabled. Check settings.json."});
             return;
         }
-        let destination = sanitizeFilename(request.body.destination);
+        let destination = getFilePath(request.body.destination);
         let groupId = request.body.groupId;
         let deletePreview = request.body.deletePreview;
         if (deletePreview && !settings.allow_previews) {
@@ -291,7 +386,7 @@ app.post('/upload',
         let filePath = screenshotsDir + "/" + fileName;
         if (!await fs.exists(filePath)) {
             console.log("Upload failed (file ("+filePath+") does not exist)");
-            response.send({success: false, errorCode: 201, error: 'File does not exist'});
+            response.send({success: false, errorCode: 201, error: "File does not exist"});
             return;
         }
         let dataString;
@@ -319,10 +414,10 @@ app.post('/upload',
             response.send({success: true, destination: destination, imageId: data.BackingAssetId, content: "rbxassetid://"+data.BackingAssetId});
             if (toDelete || deletePreview) {
                 try {
-                   let directories = await getPreviewDirectory();
-                   if (deletePreview && !toDelete) {
+                    let directories = await getPreviewDirectory();
+                    if (deletePreview && !toDelete) {
                         directories.shift();
-                   }
+                    }
                     for (let dir of directories) {
                         await fs.remove(dir + "/" + fileName);
                     }
@@ -352,12 +447,12 @@ app.post('/upload',
 );
 
 let maskCache = {};
-app.post('/screenshot',
+app.post("/screenshot",
     express.json(),
     async (request, response) => {
         console.log("Received screenshot request",request.body);
         let crop = request.body.crop;
-        let destination = sanitizeFilename(request.body.destination);
+        let destination = getFilePath(request.body.destination);
         let maskStep = request.body.mask;
         let isPreview = request.body.preview;
         if (isPreview && !settings.allow_previews) {
@@ -405,20 +500,61 @@ app.post('/screenshot',
                         this.bitmap.data[ idx + 1 ] = 255 - Math.abs(green - otherGreen);
                         this.bitmap.data[ idx + 2 ] = 255 - Math.abs(blue - otherBlue);
                     });
-                    await debugWrite(mask, dirs[0]+"/"+destination+"-difference.png");
                     imageA.mask(mask, 0, 0);
-                    await debugWrite(imageA, dirs[0]+"/"+destination+"-a-masked.png");
                     imageB.mask(mask, 0, 0);
-                    await debugWrite(imageB, dirs[0]+"/"+destination+"-b-masked.png");
-                    imageA.composite(imageB, 0, 0);
-                    await debugWrite(imageA, dirs[0]+"/"+destination+"-ab-composite.png");
-                    imageA.mask(mask, 0, 0);
+                    await debugWrite(imageA, dirs[0]+"/"+destination+"-masked-a.png");
+                    await debugWrite(imageB, dirs[0]+"/"+destination+"-masked-b.png");
+                    // start + (end - start)*pct = result
+                    // 0 + (red - 0)*pct
+                    // 255 + (red - 255)*pct
+                    // (result - start)/pct + start = end
+                    imageA.scan(0, 0, imageA.bitmap.width, imageA.bitmap.height, function(x, y, idx) {
+                        var alpha = this.bitmap.data[ idx + 3 ];
+                        if (alpha != 0) { 
+                            var red   = this.bitmap.data[ idx + 0 ];
+                            var green = this.bitmap.data[ idx + 1 ];
+                            var blue  = this.bitmap.data[ idx + 2 ];
+                            red   = red*255/alpha;
+                            green = green*255/alpha;
+                            blue  = blue*255/alpha;
+
+                            var otherRed   = imageB.bitmap.data[ idx + 0 ];
+                            var otherGreen = imageB.bitmap.data[ idx + 1 ];
+                            var otherBlue  = imageB.bitmap.data[ idx + 2 ];
+                            var otherAlpha = imageB.bitmap.data[ idx + 3 ];
+                            otherRed   = (otherRed - 255)*255/otherAlpha + 255;
+                            otherGreen = (otherGreen - 255)*255/otherAlpha + 255;
+                            otherBlue  = (otherBlue - 255)*255/otherAlpha + 255;
+
+                            this.bitmap.data[ idx + 0 ] = Math.min(Math.max(red/2 + otherRed/2, 0), 255);
+                            this.bitmap.data[ idx + 1 ] = Math.min(Math.max(green/2 + otherGreen/2, 0), 255);
+                            this.bitmap.data[ idx + 2 ] = Math.min(Math.max(blue/2 + otherBlue/2, 0), 255);
+
+                            // DEBUG:
+                            if (DEBUG_MODE) {
+                                mask.bitmap.data[ idx + 0 ] = red;
+                                mask.bitmap.data[ idx + 1 ] = green;
+                                mask.bitmap.data[ idx + 2 ] = blue;
+                                mask.bitmap.data[ idx + 3 ] = 255;
+
+                                imageB.bitmap.data[ idx + 0 ] = otherRed;
+                                imageB.bitmap.data[ idx + 1 ] = otherGreen;
+                                imageB.bitmap.data[ idx + 2 ] = otherBlue;
+                                imageB.bitmap.data[ idx + 3 ] = 255;
+                            }
+                        }
+                    });
+                    await debugWrite(mask, dirs[0]+"/"+destination+"-test-a.png");
+                    await debugWrite(imageB, dirs[0]+"/"+destination+"-test-b.png");
+                    await debugWrite(imageA, dirs[0]+"/"+destination+"-test-final.png");
                     image = imageA;
                     console.log("Screenshot finished. Mask completed.");
                     delete maskCache[destination];
                 }
             }
             let name = destination+".png";
+            console.log("Writing to:"+(dirs[0] + "/" + name));
+            await fs.ensureFile(dirs[0] + "/" + name);
             await image.writeAsync(dirs[0] + "/" + name);
             if (isPreview) {
                 await previewImage(name);
@@ -434,7 +570,7 @@ app.post('/screenshot',
     }
 );
 
-app.post('/preview',
+app.post("/preview",
     express.json(),
     async (request, response) => {
         console.log("Received preview request",request.body);
@@ -443,13 +579,13 @@ app.post('/preview',
             response.send({success: false, errorCode: 11, error: "Previews have been disabled. Check settings.json."});
             return;
         }
-        let destination = sanitizeFilename(request.body.destination);
+        let destination = getFilePath(request.body.destination);
         let fileName = destination+".png";
         let screenshotsDir = (await getPreviewDirectory())[0];
         let filePath = screenshotsDir + "/" + fileName;
         if (!await fs.exists(filePath)) {
             console.log("Preview failed (file ("+filePath+") does not exist)");
-            response.send({success: false, errorCode: 501, error: 'File does not exist'});
+            response.send({success: false, errorCode: 501, error: "File does not exist"});
             return;
         }
         try {
@@ -464,7 +600,7 @@ app.post('/preview',
     }
 );
 
-app.post('/unpreview',
+app.post("/unpreview",
     express.json(),
     async(request, response) => {
         console.log("Received unpreview request",request.body);
@@ -473,10 +609,10 @@ app.post('/unpreview',
             response.send({success: false, errorCode: 11, error: "Previews have been disabled. Check settings.json."});
             return;
         }
-        let destination = sanitizeFilename(request.body.destination);
+        let destination = getFilePath(request.body.destination);
         let fileName = destination+".png";
         try {
-           let directories = await getPreviewDirectory();
+            let directories = await getPreviewDirectory();
             directories.shift();
             for (let dir of directories) {
                 await fs.remove(dir + "/" + fileName);
@@ -491,65 +627,248 @@ app.post('/unpreview',
     }
 );
 
-app.post('/delete',
+app.post("/delete",
     express.json(),
     async(request, response) => {
         console.log("Received delete request",request.body);
-        let destination = sanitizeFilename(request.body.destination);
-        let fileName = destination+".png";
+        let fileName;
+        if (request.body.destination) {
+            let destination = getFilePath(request.body.destination);
+            fileName = destination+".png";
+        } else {
+            fileName = getFilePath(request.body.directory);
+        }
         let directories = await getPreviewDirectory();
         try {
             for (let dir of directories) {
                 await fs.remove(dir + "/" + fileName);
+            }
+            if (request.body.destination) {
+                await fs.remove(directories[0] + "/" + getFilePath(request.body.destination)+".json");
             }
             console.log("Delete finished.");
             response.send({success: true});
         }
         catch (err) {
             console.log("Delete failed:",err);
-            response.send({success: false, errorCode: 600, error: err});
+            response.send({success: false, errorCode: 600, error: err.toString()});
         }
     }
 );
 
-app.post('/calibrate',
+app.post("/spritesheet",
     express.json(),
-    async (request, response) => {
-        console.log("Received calibrate request",request.body);
-        let color = request.body.color;
-        let tolerance = request.body.tolerance;
-        let r = color[0], g = color[1], b = color[2];
+    async(request, response) => {
+        console.log("Received spritesheet request",request.body);
+        let directories = await getPreviewDirectory();
+        let spriteSize = request.body.size;
+        let spriteDestination = getFilePath(request.body.destination);
+        let spriteFileName = spriteDestination+".png";
+        let spriteFilePath = directories[0] + "/" + spriteFileName;
+        let images = request.body.images;
+        let isPreview = request.body.preview;
+        if (isPreview && !settings.allow_previews) {
+            console.log("Rejected spritesheet request because previews are disabled.");
+            response.send({success: false, errorCode: 11, error: "Previews have been disabled. Check settings.json."});
+            return;
+        }
         try {
-            let scrBuffer = await screenshot(screenshotOptions);
-            let image = await jimp.read(scrBuffer);
-            let start = null;
-            let end = null;
-            image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
-                var red   = this.bitmap.data[ idx + 0 ];
-                var green = this.bitmap.data[ idx + 1 ];
-                var blue  = this.bitmap.data[ idx + 2 ];
-                if (Math.abs(red - r) <= tolerance && Math.abs(green - g) <= tolerance && Math.abs(blue - b) <= tolerance) {
-                    if (!start || x + y <= start[0] + start[1]) {
-                        start = [x, y];
+            let sheet = await new jimp(spriteSize[0], spriteSize[1]);
+            let imagesInSheet = {};
+            for (let info of images) {
+                let imageDestination = getFilePath(info.destination);
+                let imageFileName = imageDestination+".png";
+                let imageFilePath = directories[0]+"/"+imageFileName;
+                if (!await fs.exists(imageFilePath)) {
+                    console.log("Spritesheet failed (file ("+imageFilePath+") does not exist)");
+                    response.send({success: false, errorCode: 901, error: "File does not exist", file: info.destination});
+                    return;
+                }
+                let image = await jimp.read(imageFilePath);
+                if (info.resize) {
+                    let resizeMode = undefined;
+                    if (info.resizeMode) {
+                        resizeMode = jimp["RESIZE_"+info.resizeMode.toUpperCase()];
                     }
-                    if (!end || x + y >= end[0] + end[1]) {
-                        end = [x, y];
+                    if (typeof(info.resize) == "number") {
+                        image.resize(image.bitmap.width*info.resize, image.bitmap.height*info.resize);
+                    } else {
+                        image.resize(info.resize[0], info.resize[1], resizeMode);
                     }
                 }
-            });
-            if (start && end && start[0] <= end[0] && start[1] <= end[1]) {
-                calibration.start = start;
-                calibration.end = end;
-                console.log("Calibrate finished: (",start,") to (",end,")");
-                response.send({success: true, calibration: calibration});
-            } else {
-                console.log("Calibration failed (could not find start and end)");
-                response.send({success: false, errorCode: 401, error: "Could not find start and end"});
+                let format = info.format || "NAME";
+                let formatted = format.replace("NAME", imageDestination);
+                imagesInSheet[formatted] = [info.position[0], info.position[1], image.bitmap.width, image.bitmap.height];
+                sheet.composite(image, info.position[0], info.position[1]);
             }
+            await fs.ensureFile(spriteFilePath);
+            await sheet.writeAsync(spriteFilePath);
+            await fs.writeJson(directories[0] + "/" + spriteDestination + ".json", imagesInSheet);
+            if (isPreview) {
+                await previewImage(spriteFileName);
+                console.log("Saved preview.");
+            }
+            console.log("Spritesheet finished.");
+            let singleSheet = {destination: spriteDestination, images: imagesInSheet, content: isPreview && "rbxasset://previews/"+spriteFileName || undefined};
+            response.send({success: true, sheets: [singleSheet], destination: singleSheet.destination, content: singleSheet.content});
         }
         catch (err) {
-            console.log("Calibration failed:",err)
-            response.send({success: false, errorCode: 400, error: err.toString()});
+            console.log("Spritesheet failed:",err);
+            response.send({success: false, errorCode: 900, error: err.toString()});
+        }
+    }
+);
+
+app.post("/autospritesheet",
+    express.json(),
+    async(request, response) => {
+        console.log("Received autospritesheet request",request.body);
+        let directories = await getPreviewDirectory();
+        let spriteSize = request.body.size;
+
+        let spriteDestination = getFilePath(request.body.destination);
+        if (spriteDestination.indexOf("PAGE") == -1) {
+            spriteDestination = spriteDestination+"-PAGE";
+        }
+        let spriteFileName = spriteDestination+".png";
+
+        let isPreview = request.body.preview;
+        if (isPreview && !settings.allow_previews) {
+            console.log("Rejected autospritesheet request because previews are disabled.");
+            response.send({success: false, errorCode: 11, error: "Previews have been disabled. Check settings.json."});
+            return;
+        }
+
+        let images = request.body.images;
+
+        let algorithm = request.body.algorithm || "rows";
+
+        let spriteImages = [];
+        try {
+            async function addImageToSheet(imageFilePath, info) {
+                console.log("imageFilePath: "+imageFilePath);
+                let image = await jimp.read(imageFilePath);
+                if (info.resize) {
+                    let resizeMode = undefined;
+                    if (info.resizeMode) {
+                        resizeMode = jimp["RESIZE_"+info.resizeMode.toUpperCase()];
+                    }
+                    if (typeof(info.resize) == "number") {
+                        image.resize(image.bitmap.width*info.resize, image.bitmap.height*info.resize);
+                    } else {
+                        image.resize(info.resize[0], info.resize[1], resizeMode);
+                    }
+                }
+                spriteImages.push({image: image, path: imageFilePath, format: info.format || "NAME"});
+            }
+            for (let info of images) {
+                if (info.directory) {
+                    let directory = getFilePath(info.directory);
+                    let folderPath = directories[0]+"/"+directory;
+                    if (!await fs.exists(folderPath)) {
+                        console.log("Autospritesheet failed (directory ("+folderPath+") does not exist)");
+                        response.send({success: false, errorCode: 901, error: "File does not exist", file: info.destination});
+                        return;
+                    } else {
+                        let imageFilePaths;
+                        if (info.recursive) {
+                            imageFilePaths = await recursiveReaddir(folderPath);
+                            for (let imageFilePath of imageFilePaths) {
+                                if (imageFilePath.match("\\.png$")) {
+                                    await addImageToSheet(imageFilePath, info);
+                                }
+                            }
+                        } else {
+                            imageFilePaths = await fs.readdir(folderPath);
+                            for (let imageFilePathBase of imageFilePaths) {
+                                let imageFilePath = folderPath+"/"+imageFilePathBase;
+                                if (imageFilePath.match("\\.png$")) {
+                                    await addImageToSheet(imageFilePath, info);
+                                }
+                            }
+                        }
+                    } 
+                } else if (info.destination) {
+                    let destination = getFilePath(info.destination);
+                    let imageFileName = destination+".png";
+                    let imageFilePath = directories[0]+"/"+imageFileName;
+                    if (!await fs.exists(imageFilePath)) {
+                        console.log("Autospritesheet failed (file ("+imageFilePath+") does not exist)");
+                        response.send({success: false, errorCode: 901, error: "File does not exist", file: info.destination});
+                        return;
+                    }
+                    await addImageToSheet(imageFilePath, info);
+                }
+            }
+
+            let sheets = [];
+            if (algorithm == "rows") {
+                console.log("Using rows algorithm");
+                spriteImages.sort((a, b) => {
+                    return b.image.bitmap.width - a.image.bitmap.width;
+                });
+                let page = 0;
+                while (spriteImages[0]) {
+                    page = page + 1;
+                    let sheet = await new jimp(spriteSize[0], spriteSize[1]);
+                    let imagesInSheet = {};
+                    let rows = [[0, 0, spriteSize[1]]];
+                    while (rows[0] && rows[0][1] < spriteSize[1]) {
+                        let row = rows[0];
+                        let space = [spriteSize[0] - row[0], row[2]];
+                        let available, availableIndex;
+                        for (let i = spriteImages.length - 1; i >= 0; i--) {
+                            let imageInfo = spriteImages[i];
+                            let image = imageInfo.image;
+                            if (image.bitmap.width > space[0]) {
+                                break;
+                            } else if (image.bitmap.height <= space[1] && (!available || available.image.bitmap.height < image.bitmap.height)) {
+                                available = imageInfo;
+                                availableIndex = i;
+                            }
+                        }
+                        if (!available) {
+                            rows.shift();
+                        } else {
+                            spriteImages.splice(availableIndex, 1);
+                            sheet.composite(available.image, row[0], row[1]);
+                            let relative = await getNameFromAbsolutePath(available.path);
+                            let formatted = available.format.replace("NAME", relative);
+                            imagesInSheet[formatted] = [row[0], row[1], available.image.bitmap.width, available.image.bitmap.height];
+         
+                            let newRow = [row[0], row[1] + available.image.bitmap.height, row[2] - available.image.bitmap.height];
+
+                            row[0] = row[0] + available.image.bitmap.width;
+                            row[2] = available.image.bitmap.height;
+                            if (row[0] >= spriteSize[0]) {
+                                rows.shift();
+                            }
+
+                            if (newRow[1] < spriteSize[1] && newRow[2] > 0) {
+                                rows.splice(1, 0, newRow);
+                            }
+                        }
+                    }
+                    let name = spriteFileName.replace("PAGE", page.toString());
+                    let spriteFilePath = directories[0] + "/" + name;
+                    await fs.ensureFile(spriteFilePath);
+                    await sheet.writeAsync(spriteFilePath);
+                    let jsonFilePath = directories[0] + "/" + (spriteDestination+".json").replace("PAGE", page.toString());
+                    await fs.writeJson(jsonFilePath, imagesInSheet);
+                    console.log("Saved sprite page "+page+" with "+imagesInSheet.length+" images.");
+                    if (isPreview) {
+                        await previewImage(name);
+                        console.log("Saved preview.");
+                    }
+                    sheets.push({destination: name, images: imagesInSheet, content: (isPreview ? "rbxasset://previews/"+name : undefined)});
+                }
+            }
+            console.log("Autospritesheet finished.");
+            response.send({success: true, sheets: sheets});
+        }
+        catch (err) {
+            console.log("Autospritesheet failed:",err);
+            response.send({success: false, errorCode: 900, error: err.toString()});
         }
     }
 );

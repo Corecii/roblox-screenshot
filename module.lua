@@ -12,6 +12,11 @@ Module API:
 		Creates a Screenshotter for the given url or localhost:port
 		Uses 'http://localhost:28081' by default
 		If autoRetry is on then requests will be retried until they succeed when the http request limit is reached
+	:SetDebugMode(bool isDebug)
+	:Set3dDebugMode(bool isDebug)
+		Turn on debug modes for the whole module.
+		Regular debug mode Prints https posts and response.
+		3d debug mode adds parts to the workspace for debugging camera centering code.
 
 Result API:
 	bool .success
@@ -56,10 +61,12 @@ Screenshotter API:
 		optional bool preview = false
 	}
 		Takes a screenshot. Crops if applicable. Copies to preview directories if applicable.
+		`destination` will accept subdirectories in the form of `dir/subdir/subdir2/.../image` for later use with Delete or AutoSpritesheet.
 		If `crop` is a Rect, it will crop from any part of the screen.
 		If `crop` is a Vector2, it will crop from the center of the screen.
 		If `mask` is true then two screenshots are taken with black and white backgrounds which are combined to mask out the background.
 		If `mask` is a number, it's used as the distance for the background. The default is 1000.
+		 Masked screenshots should disable fog, as fog can mess with the masking process.
 		result:
 			`destination` is the sanitized `destination`
 			`content` is present only if `preview = true` and is the string content you can put in a decal or imagelabel to see the preview in-game.
@@ -78,9 +85,98 @@ Screenshotter API:
 		Deletes preview copies of a screenshot.
 
 	result{} :Delete{
-		string destination/[1]
+		optional string destination/[1]
+		optional string directory
 	}
-		Deletes a screenshot and its preview copies.
+		Deletes a screenshot or a directory and its preview copies.
+		Either destination/[1] or directory is required.
+
+	result{Array<Sheet> sheets, string destination, string content} :Spritesheet{
+		Array<ImageInfoManual> images,
+		string destination,
+		optional bool preview,
+		optional Vector2 size
+	}
+		Takes the given images and puts them in a spritesheet at `destination`.
+		The size of the spritesheet is `size`, or `1024` if not provided.
+		result:
+			`sheets` contains the single spritesheet and its info as the first and only Sheet. Same format as AutoSpritesheet so that you can treat both results the same.
+			`destination` is the sanitized destination of the spritesheet
+			`content` is the Content of the spritesheet, and can be used to preview it if `preview` was true.
+
+	result{Array<Sheet> sheets} :AutoSpritesheet{
+		Array<ImageInfoAuto> images,
+		string destination,
+		optional bool preview,
+		optional Vector2 size,
+		optional string algorithm
+	}
+		`destination` is the location to save the spritesheet to.
+		 Destinations for AutoSpritesheet require a PAGE value. "PAGE" in `destination` is replaced with the page number.
+		 If PAGE is not provided, then "-PAGE" is added to the end of `destination`
+		 Example: "Items/Tools" becomes "Items/Tools-PAGE", which becomes "Items/Tools-1", "Items/Tools-2", etc.
+		 Example: "Items/PAGE_Tools" becomes "Items/1_Tools", "Items/2_Tools", etc.
+		 Example: "ItemsPAGE/Tools" becomes "Items1/Tools", "Items2/Tools", etc.
+		Takes the given images or images-in-directories and automatically puts them into multiple spritesheets with the given size.
+		`algorithm` defaults to "rows" but this may change in the future.
+		Accepted algorithms:
+			"rows"
+				Sorts sprites biggest to smallest and tries to fit sprites into rows and sub-rows.
+				Works perfect for sprites that have many similar sizes.
+		result:
+			`sheets` contains info for all of the spritesheets. See the Sheet documentation.
+
+	ImageInfoManual API: {
+		string destination/[1],
+		Vector2 position/[2],
+		optional Vector2 resize,
+		optinal number resize,
+		optional string resizeMode,
+		optional string format
+	}
+		`destination` is where the sprite/image is stored
+		`position` is where the top left corner of the image should be on the spritesheet
+		`resize` can be a Vector2 or a number.
+			As a Vector2, it sets the size of the image
+			As a number, it sets a percentage size where 1 is 100%.
+		`resizeMode` sets the resize mode. Options are:
+			"nearestNeighbor",
+			"bilinear",
+			"bicubic",
+			"hermite",
+			"bezier"
+		`format` lets you customize the name of this image in the returned Sheet object.
+		 This should be used if you have an image in a spritesheet twice.
+		 "NAME" will be replaced by the image destination.
+		 Example: "NAME@0.5x" with destination "gems/diamond" will produce "gems/diamond@0.5x"
+		 Example: "0.5x_NAME"  with destination "gems/diamond" will produce "0.5x_gems/diamond"
+
+	ImageInfoAuto API: {
+		optional string destination,
+		optional string directory,
+		optional bool recursive,
+		optional Vector2 resize,
+		optinal number resize,
+		optional string resizeMode,
+		optional string format
+	}
+		`destination` is where the sprite/image is stored
+		`directory` is a directory where AutoSpritesheet should grab all images from
+		`recursive` determines if AutoSpritesheet should grab all images recursively
+		Either `destination` or `directory` is required.
+		All other arguments are the same as their ImageInfoManual counterparts.
+
+	Sheet API: {
+		string destination,
+		Dictionary<string, Rect> images,
+		optional string content,
+	}
+		`destination` is the sanitized destination of this spritesheet.
+		`images` is a dictionary of [formatted image destination] -> [sprite position and size] pairs.
+		 The formatted image destinations are either the original destinations or the formatted destination if you provided
+		  a `format` argument in your ImageInfo.
+		`content` is the Content you can use if `preview` was true.
+
 
 	result{string destination, number imageId, string content} :Upload{
 		string destination/[1]
@@ -121,6 +217,15 @@ Screenshotter API:
 	result{bool loggedIn} :LoggedIn()
 		Returns whether or not this screenshotter has a cookie saved. *Does not* make sure that the login session is valid.
 
+	void :SaveFogState()
+		Saves the fog state. Fog should e hidden when taking masked screenshots or it will cause issues with masking.
+
+	void :LoadFogState()
+		Loads the saved fog state.
+
+	void :HideFog()
+		Sets FogStart and FogEnd to 100,000.
+
 	void :SaveCameraState{
 		optional Camera camera/[1]
 	}
@@ -135,7 +240,7 @@ Screenshotter API:
 	}
 		Gets the actual vertical FoV needed for the given region in the middle of the screen with size `size` to have the given vertical FoV `fov`.
 
-	result{Vector3 position, CFrame cframe, CFrame focus, number fov} :GetCameraParams{
+	result{Vector3 position, CFrame cframe, CFrame focus, number fov, Vector2 size} :GetCameraParams{
 		number fov
 		optional Vector2 size
 		Vector3 vector
@@ -154,8 +259,9 @@ Screenshotter API:
 		If `upVector` is not provided then it defaults to the vector nearest to Vector3.new(0, 1, 0) or Vector3.new(1, 0, 0)
 		You can provide either radiusCenter and radius OR an array of points and/or parts OR a camera cframe (where it will only solve for needed FoV).
 		If you provide points, then the # of points must be greater than 1.
+		The returned `size` is the size that the given object takes up on the screen. `size` is not returned if you use `cframe`.
 
-	result{Vector3 position, CFrame cframe, CFrame focus, number fov} :CenterCamera{
+	result{Vector3 position, CFrame cframe, CFrame focus, number fov, Vector2 size} :CenterCamera{
 		optional Camera camera,
 		number fov
 		optional Vector2 size
@@ -231,10 +337,49 @@ Error codes for use with IsError:
 	CameraFovOutOfBounds
 	CameraNeededFovOutOfBounds
 	CameraNoCenteringMethods
+
+	---
+	Spritesheet (category, for both Spritesheet and AutoSpritesheet)
+	SpritesheetFileDoesNotExist
 --]]
 
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+
+-- needed for using the module in Run mode
+local stepEvent
+local function renderStep()
+	if stepEvent then
+		return stepEvent:Wait()
+	else
+		pcall(function()
+			RunService.RenderStepped:Wait()
+			stepEvent = RunService.RenderStepped
+		end)
+		if stepEvent then
+			return
+		end
+		if not stepEvent then
+			pcall(function()
+				local event = Instance.new("BindableEvent")
+				RunService:BindToRenderStep("Pseudo-RenderStep", 1000000, function(...)
+					event:Fire(...)
+				end)
+				stepEvent = event.Event
+			end)
+		end
+		if not stepEvent then
+			local event = Instance.new("BindableEvent")
+			stepEvent = event.Event
+			coroutine.wrap(function()
+				while true do
+					event:Fire(RunService.Heartbeat:Wait())
+				end
+			end)()
+		end
+		return renderStep()
+	end
+end
 
 local function makeBackground()
 	local part = Instance.new("Part")
@@ -280,6 +425,7 @@ local function makeCalibrator(color)
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "Calibrator"
 	screenGui.DisplayOrder = 100000
+	screenGui.IgnoreGuiInset = true
 	local frame = Instance.new("Frame")
 	frame.BorderSizePixel = 0
 	frame.BackgroundColor3 = color
@@ -289,30 +435,39 @@ local function makeCalibrator(color)
 end
 
 local function waitForGuiUpdate()
-	RunService.RenderStepped:Wait()
-	RunService.RenderStepped:Wait()
+	renderStep()
+	renderStep()
 end
 
 local PRIVELEGED = pcall(function() game:GetService("CoreGui"):GetChildren() end)
+if not plugin then
+	pcall(function()
+		plugin = PluginManager():CreatePlugin()
+		plugin.Name = "Screenshotter Module Plugin"
+	end)
+end
 
 local DEBUG_MODE = false
 local DEBUG_MODE_3D = false
 local dbgPrint, dbgWarn
-if DEBUG_MODE then
-	function dbgPrint(...)
-		print("dbg:",...)
-	end
-	function dbgWarn(...)
-		local asStr = {...}
-		for i, v in next, asStr do
-			asStr[i] = tostring(v)
+local function updateDebugMode()
+	if DEBUG_MODE then
+		function dbgPrint(...)
+			print("dbg:",...)
 		end
-		warn("dbg: "..table.concat(asStr, " "))
+		function dbgWarn(...)
+			local asStr = {...}
+			for i, v in next, asStr do
+				asStr[i] = tostring(v)
+			end
+			warn("dbg: "..table.concat(asStr, " "))
+		end
+	else
+		function dbgPrint() end
+		function dbgWarn() end
 	end
-else
-	function dbgPrint() end
-	function dbgWarn() end
 end
+updateDebugMode()
 
 local function typeCheck(name, allowed, count, ...)
 	local allowedDict = {}
@@ -433,6 +588,12 @@ local errorCodes = {
 	CameraFovOutOfBounds = 802,
 	CameraNeededFovOutOfBounds = 803,
 	CameraNoCenteringMethods = 804,
+
+	---
+	Spritesheet = function(code)
+		return code >= 900 and code < 1000
+	end,
+	SpritesheetFileDoesNotExist = 901,
 }
 
 local resultMeta = {}
@@ -726,15 +887,171 @@ end
 
 function object:Delete(args)
 	args = args or {}
-	limitArgs("Unpreview", args, {1, "destination"})
+	limitArgs("Delete", args, {1, "destination", "directory"})
+	typeCheck("directory", {"string", "nil"}, 1, args.directory)
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	if not args.directory then
+		typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
+	else
+		typeCheck("directory", {"string"}, 1, args.directory)
+	end
+	local result = makeApiRequest(self.url, "/delete", "POST", {
+		destination = args[1] or args.destination,
+		directory = args.directory,
+	}, self.autoRetry)
+	return result
+end
+
+local function convertSpritesheetResult(result)
+	if not result.sheets then
+		return result
+	end
+	local sheets = result.sheets
+	for _, sheet in next, sheets do
+		for key, image in next, sheet.images do
+			sheet.images[key] = Rect.new(image[1], image[2], image[1] + image[3], image[2] + image[4])
+		end
+	end
+	return result
+end
+
+local resizeModes = {
+	nearest_neighbor = "NEAREST_NEIGHBOR",
+	bilinear = "BILINEAR",
+	bicubic = "BICUBIC",
+	hermite = "HERMITE",
+	bezier = "BEZIER",
+} -- TODO: check these
+function object:Spritesheet(args)
+	args = args or {}
+	limitArgs("Spritesheet", args, {1, "destination", 2, "images", "size", "preview"})
 	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
 	typeCheck("destination", {"string", "nil"}, 1, args.destination)
 	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
-	local destination = args[1] or args.destination or error("Destination ([1] or ['destination']) argument required")
-	local result = makeApiRequest(self.url, "/delete", "POST", {
-		destination = destination
+	typeCheck("parameter 2", {"table", "nil"}, 1, args[2])
+	typeCheck("images", {"table", "nil"}, 1, args.images)
+	typeCheck("parameter 2 or images", {"table"}, 1, args[2] or args.images)
+	typeCheck("size", {"Vector2", "nil"}, 1, args.size)
+	typeCheck("preview", {"boolean", "nil"}, 1, args.preview)
+	if #(args[2] or args.images) == 0 then
+		error("(parameter 2 or images) must be a non-empty Array")
+	end
+	local imagesBase = args[2] or args.images
+	local images = {}
+	do
+		local last = 0
+		for k, info in next, imagesBase do
+			if last ~= k - 1 then
+				error("Bad type for images: got Dictionary, expected Array")
+			end
+			last = k
+			local prefix = "images[...]"
+			limitArgs(prefix, info, {1, "destination", 2, "position", "resize", "resizeMode", "format"})
+			typeCheck(prefix.."[1]", {"string", "nil"}, 1, info[1])
+			typeCheck(prefix..".destination", {"string", "nil"}, 1, info.destination)
+			typeCheck(prefix.."[1] or "..prefix..".destination", {"string"}, 1, info[1] or info.destination)
+			typeCheck(prefix.."[2]", {"Vector2", "nil"}, 1, info[2])
+			typeCheck(prefix..".position", {"Vector2", "nil"}, 1, info.position)
+			typeCheck(prefix.."[2] or "..prefix..".position", {"Vector2"}, 1, info[2] or info.position)
+			typeCheck(prefix..".resize", {"Vector2", "number", "nil"}, 1, info.resize)
+			typeCheck(prefix..".resizeMode", {"string", "nil"}, 1, info.resizeMode)
+			typeCheck(prefix..".format", {"string", "nil"}, 1, info.format)
+			images[k] = {
+				destination = info[1] or info.destination,
+				position = info[2] or info.position,
+				resizeMode = info.resizeMode,
+				format = info.format,
+			}
+			if typeof(info.resize) == "Vector2" then
+				images[k].resize = {info.resize.x, info.resize.y}
+			else
+				images[k].resize = info.resize
+			end
+			images[k].position = {images[k].position.x, images[k].position.y}
+		end
+	end
+	local destination = args[1] or args.destination
+	local size = args.size or Vector2.new(1024, 1024)
+	local preview = args.preview or false
+	local result = makeApiRequest(self.url, "/spritesheet", "POST", {
+		destination = destination,
+		images = images,
+		size = {size.x, size.y},
+		preview = preview,
 	}, self.autoRetry)
-	return result
+	return convertSpritesheetResult(result)
+end
+
+local acceptedAlgorithms = {
+	["rows"] = true
+}
+local acceptedAlgoList = {}
+for algo in next, acceptedAlgorithms do
+	acceptedAlgoList[#acceptedAlgoList + 1] = algo
+end
+local acceptedAlgoStr = table.concat(acceptedAlgoList, ", ")
+function object:AutoSpritesheet(args)
+	args = args or {}
+	limitArgs("Spritesheet", args, {1, "destination", 2, "images", 3, "algorithm", "size", "preview"})
+	typeCheck("parameter 1", {"string", "nil"}, 1, args[1])
+	typeCheck("destination", {"string", "nil"}, 1, args.destination)
+	typeCheck("parameter 1 or destination", {"string"}, 1, args[1] or args.destination)
+	typeCheck("parameter 2", {"table", "nil"}, 1, args[2])
+	typeCheck("images", {"table", "nil"}, 1, args.images)
+	typeCheck("parameter 2 or images", {"table"}, 1, args[2] or args.images)
+	typeCheck("parameter 3", {"string", "nil"}, 1, args[3])
+	typeCheck("algorithm", {"string", "nil"}, 1, args.algorithm)
+	if (args[1] or args.algorithm) and not acceptedAlgorithms[args[1] or args.algorithm] then
+		error("Bad value for algorithm: got "..tostring(args[1] or args.algorithm)..", expected one of "..acceptedAlgoStr)
+	end
+	typeCheck("size", {"Vector2", "nil"}, 1, args.size)
+	typeCheck("preview", {"boolean", "nil"}, 1, args.preview)
+	if #(args[2] or args.images) == 0 then
+		error("(parameter 2 or images) must be a non-empty Array")
+	end
+	local imagesBase = args[2] or args.images
+	local images = {}
+	do
+		local last = 0
+		for k, info in next, imagesBase do
+			if last ~= k - 1 then
+				error("Bad type for images: got Dictionary, expected Array")
+			end
+			last = k
+			local prefix = "images[...]"
+			limitArgs(prefix, info, {"destination", "directory", "position", "resize", "resizeMode", "format", "recursive"})
+			typeCheck(prefix..".destination", {"string", "nil"}, 1, info.destination)
+			typeCheck(prefix..".directory", {"string", "nil"}, 1, info.directory)
+			typeCheck(prefix..".destination or "..prefix..".directory", {"string"}, 1, info.destination or info.directory)
+			typeCheck(prefix..".resize", {"Vector2", "number", "nil"}, 1, info.resize)
+			typeCheck(prefix..".resizeMode", {"string", "nil"}, 1, info.resizeMode)
+			typeCheck(prefix..".format", {"string", "nil"}, 1, info.format)
+			typeCheck(prefix..".recursive", {"boolean", "nil"}, 1, info.recursive)
+			images[k] = {
+				destination = info.destination,
+				directory = info.directory,
+				format = info.format,
+				recursive = info.recursive,
+			}
+			if typeof(info.resize) == "Vector2" then
+				images[k].resize = {info.resize.x, info.resize.y}
+			else
+				images[k].resize = info.resize
+			end
+		end
+	end
+	local destination = args[1] or args.destination
+	local algorithm = args[3] or args.algorithm
+	local size = args.size or Vector2.new(1024, 1024)
+	local preview = args.preview or false
+	local result = makeApiRequest(self.url, "/autospritesheet", "POST", {
+		destination = destination,
+		images = images,
+		algorithm = algorithm,
+		size = {size.x, size.y},
+		preview = preview,
+	}, self.autoRetry)
+	return convertSpritesheetResult(result)
 end
 
 function object:Screenshot(args)
@@ -800,7 +1117,7 @@ function object:Screenshot(args)
 			bg:SetDistance(args.distance or mask)
 		end
 
-		bg:SetColor(Color3.new(0, 0, 0))
+		bg:SetColor(Color3.new(1, 1, 1))
 		bg:Show()
 		waitForGuiUpdate()
 		local result = makeApiRequest(self.url, "/screenshot", "POST", {
@@ -814,7 +1131,7 @@ function object:Screenshot(args)
 			return result
 		end
 
-		bg:SetColor(Color3.new(1, 1, 1))
+		bg:SetColor(Color3.new(0, 0, 0))
 		waitForGuiUpdate()
 		result = makeApiRequest(self.url, "/screenshot", "POST", {
 			destination = destination,
@@ -835,6 +1152,30 @@ function object:Screenshot(args)
 		cleanup()
 		return result
 	end
+end
+
+function object:SaveFogState(args)
+	local lighting = game:GetService("Lighting")
+	self.lightingState = {
+		FogStart = lighting.FogStart,
+		FogEnd = lighting.FogEnd,
+	}
+end
+
+function object:LoadFogState()
+	if not self.lightingState then
+		return
+	end
+	local lighting = game:GetService("Lighting")
+	for k, v in next, self.lightingState do
+		lighting[k] = v
+	end
+end
+
+function object:HideFog()
+	local lighting = game:GetService("Lighting")
+	lighting.FogStart = 100000
+	lighting.FogEnd = 100000
 end
 
 function object:SaveCameraState(args)
@@ -905,6 +1246,20 @@ local function rotateVectorTowards(vector1, vector2, angle)
 	return math.cos(angle)*vector1 + math.sin(angle)*vector2_t
 end
 
+local function pointToScreenSpace(cframe, fieldOfView, point)
+	-- borrowed from https://devforum.roblox.com/t/3d-gui-module/5183 ( http://www.roblox.com/Roblox-3D-GUI-Module-item?id=159576724 )
+	-- used for transforming points from GetCameraParams into a size
+	-- no need to rewrite what's already written!
+	local screenSize = workspace.CurrentCamera.ViewportSize
+	local relative = cframe:pointToObjectSpace(point)
+	local ratio = screenSize.x/screenSize.y
+	local yFactor = math.tan(math.rad(fieldOfView/2))
+	local xFactor = ratio*yFactor
+	local y = (relative.y/relative.z) / yFactor
+	local x = (relative.x/relative.z) / -xFactor
+	return Vector2.new(screenSize.x*(0.5 + 0.5*x), screenSize.y*(0.5 + 0.5*y))
+end
+
 function object:GetCameraFovForSize(args)
 	args = args or {}
 	limitArgs("GetCameraParams", args, {1, "size", "fov"})
@@ -936,7 +1291,7 @@ local defaultUpVector1 = Vector3.new(0, 1, 0)
 local defaultUpVector2 = Vector3.new(1, 0, 0)
 function object:GetCameraParams(args)
 	args = args or {}
-	limitArgs("GetCameraParams", args, {1, "camera", "size", "fov", "vector", "upVector", "radiusCenter", "radius", "points", "parts", "cframe"})
+	limitArgs("GetCameraParams", args, {1, "camera", "size", "fov", "vector", "upVector", "radiusCenter", "radius", "points", "parts", "cframe" ,"force_x", "force_y"})
 	typeCheck("parameter 1", {"Camera", "nil"}, 1, args[1])
 	typeCheck("camera", {"Camera", "nil"}, 1, args.camera)
 	typeCheck("size", {"Vector2", "nil"}, 1, args.size)
@@ -1004,6 +1359,7 @@ function object:GetCameraParams(args)
 
 	-- sorry for the case switch (camelCase to snake_case) in the following sections, snake_case is easier to comprehend for math stuff
 	local final_position
+	local final_size
 
 	if radiusCenter and radius then
 		local minSize = math.min(size.x, size.y)
@@ -1015,6 +1371,7 @@ function object:GetCameraParams(args)
 		local base_depth = width/math.tan(angle)
 		local full_depth = base_depth + add_depth
 		final_position = radiusCenter - vector*full_depth
+		final_size = Vector2.new(minSize, minSize)
 	end
 
 	if parts then
@@ -1148,13 +1505,114 @@ function object:GetCameraParams(args)
 			x_camera_point, x_midpoint = camera_point, midpoint
 		end
 
-		if y_camera_point < x_camera_point then
-			final_position = y_camera_point
+		local base_dist
+		local major_axis, minor_axis
+		local major_dist, minor_dist
+		if args.force_y or (not args.force_x and y_camera_point < x_camera_point) then
+			base_dist = y_camera_point
+			major_dist, minor_dist = y_midpoint, x_midpoint
+			major_axis, minor_axis = upVector, rightVector
 		else
-			final_position = x_camera_point
+			base_dist = x_camera_point
+			major_dist, minor_dist = x_midpoint, y_midpoint
+			major_axis, minor_axis = rightVector, upVector
 		end
 
-		final_position = final_position*vector + y_midpoint*upVector + x_midpoint*rightVector
+		-- fix position on minor_axis so that object is centered
+		-- to conceptualize how this works:
+		--  for every pair of points in the model...
+		--  1. get the position of both points shifted along major_axis such that they're on the minor_axis-vector plane
+		--  2. form a line from each point such that it passes through minor_axis
+		--  3. pass both lines through the same point on minor_axis, and shift that point until the angle between vector and each of the two lines are congruent
+		--  4. take that angle and compare it to the existing max_angle. if it's greater than the max_angle, use the new angle instead and save the point where both lines met
+		--  the code below is based on the above concept, but does not do exactly that.
+		--  ---
+		--  something to note is that, since the angles of each line are congruent, they form similar triangles made up of the line, vector, and a line parallel to minor_axis
+		--  if we can get the length of two sides of one of those similar triangles, we can get the point where the lines meet and the angle.
+		--  we have one side of each triangle: the side parallel to vector.
+		--  since the triangles are similar, we know that vector_parallel_a/vector_parallel_b = minor_parallel_a/minor_parallel_b
+		--  we also know what minor_parallel_a + minor_parallel_b is: it's the distance between point a and point b on the minor_axis
+		--  this gives us two equations, where the minor_parallel are our unknowns:
+		--   minor_parallel_a/minor_parallel_b = vector_parallel_a/vector_parallel_b
+		--   minor_parallel_a - minor_parallel_b = minor_axis_dist
+		--  using these two equations and some math, we can find minor_parallel_a and minor_parallel_b
+		--  which gives us the point location using minor_parallel_a and the angle using inverse tan, minor_parallel_a, and vector_parallel_a
+		--  ---
+		--  in the code, the length of vector_parallel_a and vector_parallel_b is a_forward and b_forward respectively
+		--  in the code, the length of minor_parallel_a is a_minor_opp
+		--  in the code, a_minor and b_minor are positions of point a and point b along the minor_axis
+		local max_a_point, max_b_point = points[1], points[2]
+		if #points > 2 then
+			local max_angle
+			local max_a_minor, max_a_minor_opp;
+			local function getAngleMinorOpp(a_point, b_point)
+				local a_forward = a_point:Dot(vector) - base_dist
+				local a_minor = a_point:Dot(minor_axis)
+				local b_forward = b_point:Dot(vector) - base_dist
+				local b_minor = b_point:Dot(minor_axis)
+				-- a_f/b_f =  a_minor_opp/b_minor_opp
+				-- (b_minor_opp + b_minor_opp) = math.abs(a_minor - b_minor)
+				local ratio = (a_forward/b_forward)
+				local dist_v = (a_minor - b_minor)
+				local a_minor_opp = dist_v/(1 + 1/ratio)
+				local angle = math.abs(math.atan(a_minor_opp/a_forward))
+				return angle, a_minor, a_minor_opp
+			end
+			max_angle, max_a_minor, max_a_minor_opp = getAngleMinorOpp(max_a_point, max_b_point)
+			-- keep looping through the parts until we've compared our max_a_point and max_b_point to every point
+			-- this is cheaper than comparing every point to every point
+			-- normally this takes between 1 to 3 iterations instead of n iterations.
+			-- TODO: make this not do any redundant comparisons when the a_point index is higher than the b_point index (or vice versa)
+			local max_i = -1
+			local i = 0
+			while (i%#points) + 1 ~= max_i do
+				i = i%#points + 1
+				if i == -1 then
+					max_i = 1
+				end
+				local i_point = points[i]
+				local angle_a, minor_a, minor_opp_a
+				local angle_b, minor_b, minor_opp_b
+				if max_a_point ~= i_point then
+					angle_a, minor_a, minor_opp_a = getAngleMinorOpp(i_point, max_a_point)
+				end
+				if max_b_point ~= i_point then
+					angle_b, minor_b, minor_opp_b = getAngleMinorOpp(i_point, max_b_point)
+				end
+				if not angle_b or (angle_a and angle_a > angle_b) then
+					if angle_a and angle_a > max_angle then
+						max_angle = angle_a
+						max_a_point, max_b_point = i_point, max_a_point -- discard existing b_point
+						max_a_minor, max_a_minor_opp = minor_a, minor_opp_a
+						max_i = i
+					end
+				elseif angle_b and angle_b > max_angle then
+					max_angle = angle_b
+					max_a_point = i_point-- discard existing a_point
+					max_a_minor, max_a_minor_opp = minor_b, minor_opp_b
+					max_i = i
+				end
+			end
+			minor_dist = max_a_minor - max_a_minor_opp
+		end
+
+		final_position = base_dist*vector + major_dist*major_axis + minor_dist*minor_axis
+
+		local cameraCFrame = CFrame.new(
+			final_position.x, final_position.y, final_position.z,
+			rightVector.x, upVector.x, vector.x,
+			rightVector.y, upVector.y, vector.y,
+			rightVector.z, upVector.z, vector.z
+		)
+		if minor_axis == rightVector then
+			local point1 = pointToScreenSpace(cameraCFrame, actualFov, max_a_point)
+			local point2 = pointToScreenSpace(cameraCFrame, actualFov, max_b_point)
+			final_size = Vector2.new(math.abs(point2.x - point1.x), size.y)
+		else
+			local point1 = pointToScreenSpace(cameraCFrame, actualFov, max_a_point)
+			local point2 = pointToScreenSpace(cameraCFrame, actualFov, max_b_point)
+			final_size = Vector2.new(size.x, math.abs(point2.y - point1.y))
+		end
 
 		if DEBUG_MODE_3D then
 			debugVector("depth_dist", final_position, (y_camera_point < x_camera_point and dbg_y_depth or dbg_x_depth)*vector, Color3.new(0, 0, 0))
@@ -1190,7 +1648,7 @@ function object:GetCameraParams(args)
 	)
 	local focusCFrame = cameraCFrame*CFrame.new(0, 0, 1)
 
-	return asResult{success = true, position = final_position, cframe = cameraCFrame, focus = focusCFrame, fov = actualFov}
+	return asResult{success = true, position = final_position, cframe = cameraCFrame, focus = focusCFrame, fov = actualFov, size = final_size}
 end
 
 function object:CenterCamera(args)
@@ -1204,7 +1662,15 @@ function object:CenterCamera(args)
 end
 
 return {
-	new = makeObject
+	version = "1.3.0",
+	new = makeObject,
+	SetDebugMode = function(isDebug)
+		DEBUG_MODE = isDebug and true or false
+		updateDebugMode()
+	end,
+	Set3dDebugMode = function(isDebug)
+		DEBUG_MODE_3D = isDebug and true or false
+	end,
 }
 
 --[[

@@ -1,6 +1,12 @@
-local RUN_LOGIN_TESTS = true
+local RUN_TESTS_LOGIN = true
+local RUN_TESTS_REQUEST_LIMIT = true
+local RUN_TESTS_SPRITES = true
 
-local Screenshotter = require(2218503664)
+local LOGIN_USERNAME = ""
+local LOGIN_PASSWORD = "" -- DO NOT USE YOUR MAIN ACCOUNT. DO NOT SAVE TO FILE OR UPLOAD.
+
+local Screenshotter = require(script.MainModule:Clone())
+-- Screenshotter:Set3dDebugMode(true)
 
 local scr = Screenshotter.new()
 
@@ -16,6 +22,74 @@ scr:Calibrate{
 }:Print("Calibrate "):Assert()
 
 scr:Calibrate{}:Print("Calibrate "):Assert()
+
+-- Test Spritesheets:
+
+if RUN_TESTS_SPRITES then
+	local base = workspace.SpriteBase
+	scr:CenterCamera{
+		size = Vector2.new(90, 90),
+		fov = 20,
+		vector = Vector3.new(0, -1, 1),
+
+		parts = base,
+	}:Assert()
+	for i = 1, 10 do
+		base.Color = Color3.new(math.random(), math.random(), math.random())
+		scr:Screenshot{
+			destination = "spritetest/folder/sprite-"..tostring(i),
+			crop = Vector2.new(100, 100),
+			mask = true,
+		}:Assert()
+	end
+	for i = 1, 4 do
+		base.Color = Color3.new(math.random(), math.random(), math.random())
+		scr:Screenshot{
+			destination = "spritetest/sprite-"..tostring(i),
+			crop = Vector2.new(100, 100),
+			mask = true,
+		}:Assert()
+	end
+
+	scr:Spritesheet{
+		destination = "spritetest/result-manual",
+		images = {
+			{"spritetest/sprite-1", Vector2.new(0, 0)},
+			{"spritetest/sprite-2", Vector2.new(1024 - 50, 0), resize = Vector2.new(50, 100), resizeMode = "bicubic"},
+			{"spritetest/sprite-3", Vector2.new(0, 1024 - 50), resize = Vector2.new(100, 50)},
+			{"spritetest/sprite-4", Vector2.new(1024 - 50, 1024 - 50)},
+		},
+		preview = true,
+	}:Print("Manual Sprites "):Assert()
+
+	scr:AutoSpritesheet{
+		destination = "spritetest/result-auto",
+		images = {
+			{destination = "spritetest/sprite-1"},
+			{destination = "spritetest/sprite-2", resize = Vector2.new(50, 100), resizeMode = "bicubic"},
+			{destination = "spritetest/sprite-3", resize = Vector2.new(100, 50)},
+			{destination = "spritetest/sprite-4"},
+			{directory = "spritetest/folder", recursive = true},
+			{directory = "spritetest/folder", resize = Vector2.new(10, 10)},
+		},
+		preview = true,
+	}:Print("Auto Sprites "):Assert()
+
+	scr:AutoSpritesheet{
+		destination = "spritetest/result-auto-small",
+		size = Vector2.new(160, 100),
+		images = {
+			{destination = "spritetest/sprite-1"},
+			{destination = "spritetest/sprite-2", resize = Vector2.new(50, 100), resizeMode = "bicubic"},
+			{destination = "spritetest/sprite-3", resize = Vector2.new(100, 50)},
+			{destination = "spritetest/sprite-4"},
+			{directory = "spritetest/folder", recursive = true},
+			{directory = "spritetest/folder", resize = 0.1, format = "NAME-small"},
+			{directory = "spritetest/folder", resize = 0.5, format = "NAME-medium"},
+		},
+		preview = true,
+	}:Print("Auto Sprites Small"):Assert()
+end
 
 -- Test SaveCameraState:
 
@@ -35,20 +109,48 @@ scr:CenterCamera{
 	size = Vector2.new(300, 500),
 	fov = 90,
 	vector = Vector3.new(0, -1, 1),
-	
+
 	radiusCenter = workspace.RadiusTestPart.Position,
 	radius = workspace.RadiusTestPart.Size.x/2,
 }:Print("CenterCamera 2"):Assert()
+wait(1)
+
+-- used to test and fix issues the minor_axis centering
+result = scr:CenterCamera{
+	size = Vector2.new(600, 300),
+	fov = 50,
+	vector = Vector3.new(1, 0, 1),
+	force_x = true,
+
+	parts = workspace.SizeTestPart,
+}:Print("CenterCamera 4"):Assert()
+game.StarterGui.ScreenGui.Frame.Size = UDim2.new(0, result.size.x, 0, result.size.y)
 
 wait(1)
 
-scr:CenterCamera{
+result = scr:CenterCamera{
+	size = Vector2.new(600, 300),
+	fov = 50,
+	vector = Vector3.new(1, 0, 1),
+	force_y = true,
+
+	parts = workspace.SizeTestPart,
+}:Print("CenterCamera 5"):Assert()
+game.StarterGui.ScreenGui.Frame.Size = UDim2.new(0, result.size.x, 0, result.size.y)
+
+wait(1)
+
+local result = scr:CenterCamera{
 	size = Vector2.new(300, 500),
 	fov = 90,
 	vector = Vector3.new(0, -1, 1),
-	
+
 	parts = workspace["Observation Tower"],
 }:Print("CenterCamera 3"):Assert()
+game.StarterGui.ScreenGui.Frame.Size = UDim2.new(0, result.size.x, 0, result.size.y)
+
+
+wait(1)
 
 -- Test various forms of Screenshot:
 
@@ -96,6 +198,20 @@ scr:Screenshot{
 	"C:\\\\test",
 }:Print("Screenshot test-08 "):Assert()
 
+-- Test directory support:
+
+scr:Screenshot{
+	destination = "dir/test-01",
+}:Print("Screenshot dir-test-01 "):Assert()
+
+scr:Screenshot{
+	destination = "dir/test-02",
+}:Print("Screenshot dir-test-02 "):Assert()
+
+scr:Screenshot{
+	destination = "dir/dir2/dir3/test-03",
+}:Print("Screenshot dir-test-03 "):Assert()
+
 -- Test previews:
 
 scr:Screenshot{
@@ -136,12 +252,18 @@ scr:Delete{
 	"test-12"
 }:Print("Delete test-12 "):Assert()
 
-if RUN_LOGIN_TESTS then
+wait(1)
+
+scr:Delete{
+	directory = "dir"
+}:Print("Delete dir "):Assert()
+
+if RUN_TESTS_LOGIN then
 	-- Test login:
 
 	scr:Login{
-		"", -- ENTER USERNAME HERE
-		""  -- ENTER PASSWORD HERE. DO NOT USE YOUR MAIN ACCOUNT. DO NOT SAVE TO FILE OR UPLOAD.
+		LOGIN_USERNAME,
+		LOGIN_PASSWORD,
 	}:Assert()
 	-- Print left off to avoid leaking cookie
 
@@ -179,12 +301,16 @@ if RUN_LOGIN_TESTS then
 	}:Print("Upload test-11 registry "):Assert()
 end
 
--- http request limit tests
-print("Beginning request limit tests...")
-for i = 1, 500 do
-	scr:Preview{"test-11"}:Assert()
-	if i%10 == 0 then
-		print("  On request",i)
+if RUN_TESTS_REQUEST_LIMIT then
+	-- http request limit tests
+	print("Beginning request limit tests...")
+	for i = 1, 500 do
+		scr:Preview{"test-11"}:Assert()
+		if i%10 == 0 then
+			print("  On request",i)
+		end
 	end
+	print("Request limit tests done")
 end
-print("Request limit tests done")
+
+print("Tests done")
