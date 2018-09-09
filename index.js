@@ -746,7 +746,6 @@ app.post("/autospritesheet",
         let spriteImages = [];
         try {
             async function addImageToSheet(imageFilePath, info) {
-                console.log("imageFilePath: "+imageFilePath);
                 let image = await jimp.read(imageFilePath);
                 if (info.resize) {
                     let resizeMode = undefined;
@@ -849,7 +848,8 @@ app.post("/autospritesheet",
                             }
                         }
                     }
-                    let name = spriteFileName.replace("PAGE", page.toString());
+                    let destination = spriteDestination.replace("PAGE", page.toString());
+                    let name = destination+".png";
                     let spriteFilePath = directories[0] + "/" + name;
                     await fs.ensureFile(spriteFilePath);
                     await sheet.writeAsync(spriteFilePath);
@@ -860,7 +860,7 @@ app.post("/autospritesheet",
                         await previewImage(name);
                         console.log("Saved preview.");
                     }
-                    sheets.push({destination: name, images: imagesInSheet, content: (isPreview ? "rbxasset://previews/"+name : undefined)});
+                    sheets.push({destination: destination, images: imagesInSheet, content: (isPreview ? "rbxasset://previews/"+destination : undefined)});
                 }
             }
             console.log("Autospritesheet finished.");
