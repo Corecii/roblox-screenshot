@@ -13,6 +13,7 @@
   "author": "Corecii Cyr",
   "license": "MIT",
   "dependencies": {
+    "d3-delaunay": "^4.1.5",
     "express": "^4.16.3",
     "fs-extra": "^4.0.3",
     "hawk": "^7.0.7",

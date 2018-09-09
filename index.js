@@ -11,6 +11,7 @@ const escape = require("querystring").escape;
 const sanitizeFilename = require("sanitize-filename");
 const recursiveReaddir = require("recursive-readdir");
 const upath = require("upath");
+const Delaunay = require("d3-delaunay").Delaunay;
 
 const DEBUG_MODE = false;
 
@@ -332,9 +333,9 @@ app.post("/calibrate",
             let start = null;
             let end = null;
             image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
-                var red   = this.bitmap.data[ idx + 0 ];
-                var green = this.bitmap.data[ idx + 1 ];
-                var blue  = this.bitmap.data[ idx + 2 ];
+                let red   = this.bitmap.data[ idx + 0 ];
+                let green = this.bitmap.data[ idx + 1 ];
+                let blue  = this.bitmap.data[ idx + 2 ];
                 if (Math.abs(red - r) <= tolerance && Math.abs(green - g) <= tolerance && Math.abs(blue - b) <= tolerance) {
                     if (!start || x + y <= start[0] + start[1]) {
                         start = [x, y];
@@ -446,6 +447,16 @@ app.post("/upload",
     }
 );
 
+const neighborLocations = [
+    [-1, -1],
+    [ 0, -1],
+    [ 1, -1],
+    [ 1,  0],
+    [ 1,  1],
+    [ 0,  1],
+    [-1,  1],
+    [-1,  0]
+];
 let maskCache = {};
 app.post("/screenshot",
     express.json(),
@@ -490,12 +501,12 @@ app.post("/screenshot",
                     let mask = imageB.clone();
                     //Can't get the difference compositing to work, so here it is manually:
                     mask.scan(0, 0, mask.bitmap.width, mask.bitmap.height, function(x, y, idx) {
-                        var red   = this.bitmap.data[ idx + 0 ];
-                        var green = this.bitmap.data[ idx + 1 ];
-                        var blue  = this.bitmap.data[ idx + 2 ];
-                        var otherRed   = imageA.bitmap.data[ idx + 0 ];
-                        var otherGreen = imageA.bitmap.data[ idx + 1 ];
-                        var otherBlue  = imageA.bitmap.data[ idx + 2 ];
+                        let red   = this.bitmap.data[ idx + 0 ];
+                        let green = this.bitmap.data[ idx + 1 ];
+                        let blue  = this.bitmap.data[ idx + 2 ];
+                        let otherRed   = imageA.bitmap.data[ idx + 0 ];
+                        let otherGreen = imageA.bitmap.data[ idx + 1 ];
+                        let otherBlue  = imageA.bitmap.data[ idx + 2 ];
                         this.bitmap.data[ idx + 0 ] = 255 - Math.abs(red - otherRed);
                         this.bitmap.data[ idx + 1 ] = 255 - Math.abs(green - otherGreen);
                         this.bitmap.data[ idx + 2 ] = 255 - Math.abs(blue - otherBlue);
@@ -508,20 +519,22 @@ app.post("/screenshot",
                     // 0 + (red - 0)*pct
                     // 255 + (red - 255)*pct
                     // (result - start)/pct + start = end
+                    let voronoiPoints = [];
+                    let voronoiColors = [];
                     imageA.scan(0, 0, imageA.bitmap.width, imageA.bitmap.height, function(x, y, idx) {
-                        var alpha = this.bitmap.data[ idx + 3 ];
+                        let alpha = this.bitmap.data[ idx + 3 ];
                         if (alpha != 0) { 
-                            var red   = this.bitmap.data[ idx + 0 ];
-                            var green = this.bitmap.data[ idx + 1 ];
-                            var blue  = this.bitmap.data[ idx + 2 ];
+                            let red   = this.bitmap.data[ idx + 0 ];
+                            let green = this.bitmap.data[ idx + 1 ];
+                            let blue  = this.bitmap.data[ idx + 2 ];
                             red   = red*255/alpha;
                             green = green*255/alpha;
                             blue  = blue*255/alpha;
 
-                            var otherRed   = imageB.bitmap.data[ idx + 0 ];
-                            var otherGreen = imageB.bitmap.data[ idx + 1 ];
-                            var otherBlue  = imageB.bitmap.data[ idx + 2 ];
-                            var otherAlpha = imageB.bitmap.data[ idx + 3 ];
+                            let otherRed   = imageB.bitmap.data[ idx + 0 ];
+                            let otherGreen = imageB.bitmap.data[ idx + 1 ];
+                            let otherBlue  = imageB.bitmap.data[ idx + 2 ];
+                            let otherAlpha = imageB.bitmap.data[ idx + 3 ];
                             otherRed   = (otherRed - 255)*255/otherAlpha + 255;
                             otherGreen = (otherGreen - 255)*255/otherAlpha + 255;
                             otherBlue  = (otherBlue - 255)*255/otherAlpha + 255;
@@ -542,8 +555,35 @@ app.post("/screenshot",
                                 imageB.bitmap.data[ idx + 2 ] = otherBlue;
                                 imageB.bitmap.data[ idx + 3 ] = 255;
                             }
+
+                            // Voronoi
+                            for (let offset of neighborLocations) {
+                                let neighborAlpha = this.bitmap.data[imageA.getPixelIndex(x + offset[0], y + offset[1]) + 3];
+                                if (neighborAlpha == 0) {
+                                    voronoiPoints.push([x, y]);
+                                    voronoiColors.push([red, green, blue]);
+                                    break;
+                                } 
+                            }
                         }
                     });
+                    if (voronoiPoints.length > 0) {
+                        let dela = Delaunay.from(voronoiPoints);
+                        imageA.scan(0, 0, imageA.bitmap.width, imageA.bitmap.height, function(x, y, idx) {
+                            let alpha = this.bitmap.data[ idx + 3 ];
+                            if (alpha == 0) { 
+                                let closestIndex = dela.find(x, y);
+                                //console.log("closest:",closestIndex,"max:",voronoiColors.length);
+                                if (closestIndex != -1) {
+                                    let color = voronoiColors[closestIndex];
+
+                                    this.bitmap.data[ idx + 0 ] = color[0];
+                                    this.bitmap.data[ idx + 1 ] = color[1];
+                                    this.bitmap.data[ idx + 2 ] = color[2];
+                                }
+                            }
+                        });
+                    }
                     await debugWrite(mask, dirs[0]+"/"+destination+"-test-a.png");
                     await debugWrite(imageB, dirs[0]+"/"+destination+"-test-b.png");
                     await debugWrite(imageA, dirs[0]+"/"+destination+"-test-final.png");
@@ -730,7 +770,6 @@ app.post("/autospritesheet",
         if (spriteDestination.indexOf("PAGE") == -1) {
             spriteDestination = spriteDestination+"-PAGE";
         }
-        let spriteFileName = spriteDestination+".png";
 
         let isPreview = request.body.preview;
         if (isPreview && !settings.allow_previews) {
